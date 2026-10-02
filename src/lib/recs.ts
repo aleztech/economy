@@ -33,7 +33,7 @@ export function recomendar(e: Estado): Recomendacion[] {
       nivel: 'alta',
       area: 'Gastos',
       titulo: `Te faltan ${r.gastosSinRellenar} gastos por rellenar`,
-      texto: 'Mientras estén a cero, la tasa de ahorro y las previsiones salen más optimistas de lo real. Empieza por comida, transporte y suscripciones, que suelen ser los más grandes.',
+      texto: `Están a 0 €: ${e.gastos.filter((g) => !g.importe).map((g) => g.nombre).join(', ')}. Pon su importe o elimínalos en Gastos si no los tienes. Mientras estén a cero, el ahorro y las previsiones salen más optimistas de lo real.`,
     })
   }
 
