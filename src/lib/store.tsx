@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Estado } from './types'
 import { AJUSTES_POR_DEFECTO } from './types'
-import { abrir, cifrar, derivar, type Llave, type Sobre } from './crypto'
+import { abrir, abrirConLlave, cifrar, derivar, type Llave, type Sobre } from './crypto'
+import { borrarSesion, guardarSesion, leerSesion } from './sesion'
 
 const CLAVE_LOCAL = 'economy.v1'
 
@@ -41,6 +42,29 @@ export interface Sesion {
 
 const desdeRemoto = (d: Estado): Estado => normalizar({ ...d, baseSeed: d.actualizado })
 
+/** Reabre sin contraseña con la clave recordada en este navegador, si la hay. */
+export async function reanudar(): Promise<Sesion | null> {
+  const llave = await leerSesion()
+  if (!llave) return null
+  const local = leerLocal()
+  let pub: Estado | null = null
+  try {
+    pub = await abrirConLlave<Estado>(llave, await remoto())
+  } catch {
+    /* los publicados usan otra sal (se republicaron) o no hay conexión */
+  }
+  if (local) {
+    try {
+      const datos = await abrirConLlave<Estado>(llave, local)
+      const nuevo = pub && pub.actualizado !== datos.baseSeed ? desdeRemoto(pub) : undefined
+      return { estado: normalizar(datos), llave, origen: 'local', nuevo }
+    } catch {
+      return null
+    }
+  }
+  return pub ? { estado: desdeRemoto(pub), llave, origen: 'inicial' } : null
+}
+
 export async function desbloquear(password: string): Promise<Sesion> {
   const local = leerLocal()
   if (local) {
@@ -53,12 +77,14 @@ export async function desbloquear(password: string): Promise<Sesion> {
       } catch {
         /* sin conexión o contraseña distinta en los publicados: seguimos con lo local */
       }
+      await guardarSesion(llave)
       return { estado: normalizar(datos), llave, origen: 'local', nuevo }
     } catch {
       /* contraseña distinta a la guardada en este navegador: probamos con los datos iniciales */
     }
   }
   const { datos, llave } = await abrir<Estado>(password, await remoto())
+  await guardarSesion(llave)
   return { estado: desdeRemoto(datos), llave, origen: 'inicial' }
 }
 
@@ -153,6 +179,7 @@ export function StoreProvider({ inicial, nuevo, llave: llaveInicial, onSalir, ch
       // Comprueba la contraseña actual contra lo guardado en este navegador (o los datos iniciales).
       await abrir(actual, leerLocal() ?? (await remoto()))
       llave.current = await derivar(nueva)
+      await guardarSesion(llave.current)
       const sobre = await cifrar(llave.current, estado)
       escribirLocal(sobre)
     },
@@ -160,7 +187,7 @@ export function StoreProvider({ inicial, nuevo, llave: llaveInicial, onSalir, ch
   )
 
   return (
-    <StoreCtx.Provider value={{ estado, set, guardado, exportar, importar, restaurar, cambiarPassword, salir: onSalir, pendiente, resolverPendiente }}>{children}</StoreCtx.Provider>
+    <StoreCtx.Provider value={{ estado, set, guardado, exportar, importar, restaurar, cambiarPassword, salir: () => void borrarSesion().then(onSalir), pendiente, resolverPendiente }}>{children}</StoreCtx.Provider>
   )
 }
 

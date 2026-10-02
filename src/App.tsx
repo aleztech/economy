@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { CalendarRange, Landmark, LayoutDashboard, Lock, Receipt, Settings, TrendingUp, Eye, EyeOff, LoaderCircle, RefreshCw } from 'lucide-react'
-import { StoreProvider, desbloquear, useStore, type Sesion } from './lib/store'
+import { StoreProvider, desbloquear, reanudar, useStore, type Sesion } from './lib/store'
 import Resumen from './views/Resumen'
 import Gastos from './views/Gastos'
 import Prevision from './views/Prevision'
@@ -21,6 +21,18 @@ const NAV: { id: Vista; label: string; icon: typeof LayoutDashboard }[] = [
 
 export default function App() {
   const [sesion, setSesion] = useState<Sesion | null>(null)
+  const [comprobando, setComprobando] = useState(true)
+  useEffect(() => {
+    reanudar()
+      .then((s) => s && setSesion(s))
+      .finally(() => setComprobando(false))
+  }, [])
+  if (comprobando)
+    return (
+      <main className="grid min-h-dvh place-items-center">
+        <LoaderCircle size={22} className="animate-spin text-muted" />
+      </main>
+    )
   if (!sesion) return <Acceso onOk={setSesion} />
   return (
     <StoreProvider inicial={sesion.estado} nuevo={sesion.nuevo} llave={sesion.llave} onSalir={() => setSesion(null)}>
