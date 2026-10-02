@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ChevronDown, Plus, Trash2, Target } from 'lucide-react'
+import { Pencil, Plus, Trash2, Target } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { mensual, resumir, fvAnualidad } from '../lib/calc'
 import { CATEGORIAS, uid, type Categoria, type Frecuencia, type Gasto, type Indexacion } from '../lib/types'
@@ -119,26 +119,57 @@ function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria }: {
   const m = mensual(g)
   const vacio = !g.importe
   const conObjetivo = g.objetivo != null && g.objetivo < m
+  const editar = () => {
+    if (!abierto) onToggle()
+    window.setTimeout(() => {
+      const el = document.getElementById(`n-${g.id}`) as HTMLInputElement | null
+      el?.focus()
+      el?.select()
+    }, 30)
+  }
+
+  if (confirmar)
+    return (
+      <div className="flex items-center gap-3 bg-bad-soft/60 px-4 py-3">
+        <span className="min-w-0 flex-1 truncate text-[14px]">
+          ¿Eliminar <strong>{g.nombre}</strong>?
+        </span>
+        <Button variant="ghost" className="h-9 px-3" onClick={() => setConfirmar(false)}>
+          Cancelar
+        </Button>
+        <Button variant="danger" className="h-9 bg-surface px-3" onClick={onBorrar}>
+          Eliminar
+        </Button>
+      </div>
+    )
+
   return (
     <div className={clsx(abierto && 'bg-surface-2/50')}>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3 text-left">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[14.5px] font-medium">{g.nombre}</span>
-          <span className="flex flex-wrap items-center gap-1.5">
-            {conCategoria && <Badge>{g.categoria}</Badge>}
-            {g.frecuencia !== 'mensual' && <Badge tone="info">{FREQ[g.frecuencia]} · {eur(g.importe)}</Badge>}
-            {g.fijo && <Badge>Fijo</Badge>}
-            {vacio && <Badge tone="warn">Sin rellenar</Badge>}
-            {conObjetivo && (
-              <Badge tone="good">
-                <Target size={11} /> {eur(g.objetivo!)}
-              </Badge>
-            )}
-          </span>
-        </div>
-        <span className={clsx('num shrink-0 text-[15px] font-medium', vacio && 'text-muted')}>{eur(m, m % 1 !== 0)}</span>
-        <ChevronDown size={16} className={clsx('shrink-0 text-muted transition-transform', abierto && 'rotate-180')} />
-      </button>
+      <div className="flex items-center gap-1 pr-2">
+        <button type="button" onClick={onToggle} aria-expanded={abierto} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 text-left">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="truncate text-[14.5px] font-medium">{g.nombre}</span>
+            <span className="flex flex-wrap items-center gap-1.5">
+              {conCategoria && <Badge>{g.categoria}</Badge>}
+              {g.frecuencia !== 'mensual' && <Badge tone="info">{FREQ[g.frecuencia]} · {eur(g.importe)}</Badge>}
+              {g.fijo && <Badge>Fijo</Badge>}
+              {vacio && <Badge tone="warn">Sin rellenar</Badge>}
+              {conObjetivo && (
+                <Badge tone="good">
+                  <Target size={11} /> {eur(g.objetivo!)}
+                </Badge>
+              )}
+            </span>
+          </div>
+          <span className={clsx('num shrink-0 text-[15px] font-medium', vacio && 'text-muted')}>{eur(m, m % 1 !== 0)}</span>
+        </button>
+        <button type="button" onClick={editar} aria-label={`Editar ${g.nombre}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg">
+          <Pencil size={16} />
+        </button>
+        <button type="button" onClick={() => setConfirmar(true)} aria-label={`Eliminar ${g.nombre}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-bad-soft hover:text-bad">
+          <Trash2 size={16} />
+        </button>
+      </div>
 
       {abierto && (
         <div className="grid grid-cols-2 gap-3 px-4 pt-1 pb-4">
@@ -204,20 +235,9 @@ function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria }: {
           </Field>
           <div className="col-span-2 flex items-center justify-between gap-3 pt-1">
             <Toggle checked={!!g.fijo} onChange={(v) => onChange({ fijo: v })} label="Gasto fijo" />
-            {confirmar ? (
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" className="h-9 px-3" onClick={() => setConfirmar(false)}>
-                  Cancelar
-                </Button>
-                <Button variant="danger" className="h-9 px-3" onClick={onBorrar}>
-                  Eliminar
-                </Button>
-              </div>
-            ) : (
-              <Button variant="ghost" className="h-9 px-3" onClick={() => setConfirmar(true)} aria-label="Eliminar gasto">
-                <Trash2 size={16} />
-              </Button>
-            )}
+            <Button variant="outline" className="h-9 px-3" onClick={onToggle}>
+              Listo
+            </Button>
           </div>
         </div>
       )}
