@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type InputHTMLAttributes, type SelectHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type InputHTMLAttributes, type SelectHTMLAttributes } from 'react'
 import clsx from 'clsx'
 import { eur } from '../lib/format'
 
@@ -88,15 +88,25 @@ export function TextInput(p: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...p} className={clsx(inputCls, p.className)} />
 }
 
-/** Campo numérico que permite escribir libremente y confirma al salir o pulsar Enter.
+/** Campo numérico: guarda mientras escribes (no solo al salir del campo).
  *  Con `optional`, un campo vacío devuelve undefined (útil para objetivos). */
 export function NumberInput({ value, onChange, suffix = '€', step, className, id, optional }: { value: number | undefined; onChange: (n: number) => void; suffix?: string; step?: number; className?: string; id?: string; optional?: boolean }) {
-  const [txt, setTxt] = useState(value == null ? '' : String(value).replace('.', ','))
-  useEffect(() => setTxt(value == null ? '' : String(value).replace('.', ',')), [value])
-  const commit = () => {
-    if (optional && txt.trim() === '') return (onChange as (n: number | undefined) => void)(undefined)
-    const n = Number(txt.replace(/\./g, '').replace(',', '.'))
-    onChange(Number.isFinite(n) ? n : 0)
+  const fmt = (v: number | undefined) => (v == null ? '' : String(v).replace('.', ','))
+  const [txt, setTxt] = useState(fmt(value))
+  const editando = useRef(false)
+  // Solo sincroniza desde fuera cuando no estás escribiendo (para no borrar una coma a medias).
+  useEffect(() => {
+    if (!editando.current) setTxt(fmt(value))
+  }, [value])
+  const parse = (t: string): number | undefined | null => {
+    if (t.trim() === '') return optional ? undefined : 0
+    const n = Number(t.replace(/\./g, '').replace(',', '.'))
+    return Number.isFinite(n) ? n : null
+  }
+  const emitir = (t: string) => {
+    const n = parse(t)
+    if (n === null) return
+    if (n !== value) (onChange as (n: number | undefined) => void)(n)
   }
   return (
     <div className={clsx('relative', className)}>
@@ -105,8 +115,16 @@ export function NumberInput({ value, onChange, suffix = '€', step, className, 
         inputMode="decimal"
         step={step}
         value={txt}
-        onChange={(e) => setTxt(e.target.value)}
-        onBlur={commit}
+        onFocus={() => (editando.current = true)}
+        onChange={(e) => {
+          setTxt(e.target.value)
+          emitir(e.target.value)
+        }}
+        onBlur={() => {
+          editando.current = false
+          emitir(txt)
+          setTxt(fmt(parse(txt) ?? value))
+        }}
         onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
         className={clsx(inputCls, 'num pr-9 text-right')}
       />

@@ -96,19 +96,41 @@ export function StoreProvider({ inicial, nuevo, llave: llaveInicial, onSalir, ch
   const timer = useRef<number>()
   const primera = useRef(true)
 
+  const ultimo = useRef(estado)
+  const sucio = useRef(false)
+  const guardarYa = useCallback(async () => {
+    if (!sucio.current) return
+    sucio.current = false
+    const sobre = await cifrar(llave.current, ultimo.current)
+    setGuardado(escribirLocal(sobre) ? 'guardado' : 'sin-almacenamiento')
+  }, [])
+
   useEffect(() => {
     if (primera.current) {
       primera.current = false
       return
     }
+    ultimo.current = estado
+    sucio.current = true
     setGuardado('guardando')
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(async () => {
-      const sobre = await cifrar(llave.current, estado)
-      setGuardado(escribirLocal(sobre) ? 'guardado' : 'sin-almacenamiento')
-    }, 500)
-    return () => window.clearTimeout(timer.current)
-  }, [estado])
+    timer.current = window.setTimeout(guardarYa, 150)
+  }, [estado, guardarYa])
+
+  // Guarda al instante si cierras, recargas o cambias de app.
+  useEffect(() => {
+    const flush = () => {
+      window.clearTimeout(timer.current)
+      void guardarYa()
+    }
+    const vis = () => document.visibilityState === 'hidden' && flush()
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', vis)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', vis)
+    }
+  }, [guardarYa])
 
   const set = useCallback((fn: (e: Estado) => Estado) => setEstado((e) => ({ ...fn(e), actualizado: new Date().toISOString() })), [])
 
