@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import clsx from 'clsx'
-import { CalendarRange, Landmark, LayoutDashboard, Lock, Receipt, Settings, TrendingUp, Eye, EyeOff, LoaderCircle } from 'lucide-react'
-import { StoreProvider, desbloquear, useStore } from './lib/store'
-import type { Estado } from './lib/types'
-import type { Llave } from './lib/crypto'
+import { CalendarRange, Landmark, LayoutDashboard, Lock, Receipt, Settings, TrendingUp, Eye, EyeOff, LoaderCircle, RefreshCw } from 'lucide-react'
+import { StoreProvider, desbloquear, useStore, type Sesion } from './lib/store'
 import Resumen from './views/Resumen'
 import Gastos from './views/Gastos'
 import Prevision from './views/Prevision'
@@ -22,16 +20,16 @@ const NAV: { id: Vista; label: string; icon: typeof LayoutDashboard }[] = [
 ]
 
 export default function App() {
-  const [sesion, setSesion] = useState<{ estado: Estado; llave: Llave } | null>(null)
+  const [sesion, setSesion] = useState<Sesion | null>(null)
   if (!sesion) return <Acceso onOk={setSesion} />
   return (
-    <StoreProvider inicial={sesion.estado} llave={sesion.llave} onSalir={() => setSesion(null)}>
+    <StoreProvider inicial={sesion.estado} nuevo={sesion.nuevo} llave={sesion.llave} onSalir={() => setSesion(null)}>
       <Shell />
     </StoreProvider>
   )
 }
 
-function Acceso({ onOk }: { onOk: (s: { estado: Estado; llave: Llave }) => void }) {
+function Acceso({ onOk }: { onOk: (s: Sesion) => void }) {
   const [pass, setPass] = useState('')
   const [ver, setVer] = useState(false)
   const [error, setError] = useState('')
@@ -96,7 +94,7 @@ function Acceso({ onOk }: { onOk: (s: { estado: Estado; llave: Llave }) => void 
 
 function Shell() {
   const [vista, setVista] = useState<Vista>('resumen')
-  const { guardado } = useStore()
+  const { guardado, pendiente, resolverPendiente } = useStore()
   const ir = (v: Vista) => {
     setVista(v)
     window.scrollTo({ top: 0 })
@@ -139,6 +137,24 @@ function Shell() {
         </header>
 
         <main className="mx-auto w-full max-w-[1100px] px-4 pt-5 pb-28 md:px-8 md:pb-12">
+          {pendiente && (
+            <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-info/30 bg-info-soft p-4 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <RefreshCw size={18} className="mt-0.5 shrink-0 text-info" />
+                <p className="text-[13.5px] leading-relaxed">
+                  <strong>Hay datos actualizados publicados.</strong> Cargarlos sustituye los cambios que hayas hecho en este navegador.
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button type="button" onClick={() => resolverPendiente(false)} className="h-9 rounded-xl px-3 text-[13.5px] font-medium text-muted hover:bg-surface">
+                  Mantener los míos
+                </button>
+                <button type="button" onClick={() => resolverPendiente(true)} className="h-9 rounded-xl bg-info px-3 text-[13.5px] font-medium text-white">
+                  Cargar actualizados
+                </button>
+              </div>
+            </div>
+          )}
           {vista === 'resumen' && <Resumen ir={ir} />}
           {vista === 'gastos' && <Gastos />}
           {vista === 'prevision' && <Prevision />}

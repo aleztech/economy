@@ -124,6 +124,8 @@ export interface Estado {
   activos: Activo[]
   ajustes: Ajustes
   actualizado: string
+  /** Fecha de los datos publicados de los que parte este estado. */
+  baseSeed?: string
 }
 
 export const AJUSTES_POR_DEFECTO: Ajustes = {

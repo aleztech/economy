@@ -28,11 +28,11 @@ export default function Futuro() {
       <Riesgos />
 
       {/* Jubilación */}
-      <Section title={`Patrimonio invertido a los ${a.edadJubilacion}`} hint="En euros de hoy (rentabilidad real, ya descontada la inflación). Incluye fondos, plan de pensiones y alternativos.">
+      <Section title={`Patrimonio invertido a los ${a.edadJubilacion}`} hint={`En euros de hoy (rentabilidad real, ya descontada la inflación) y restando el ${r.costeMedio.toFixed(2).replace(".", ",")} % de comisiones medias de tus fondos.`}>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat label="Pesimista" value={eur(fin.pes)} sub={`${a.rentPes} % real anual`} />
-          <Stat label="Base" value={eur(fin.base)} sub={`${a.rentBase} % real anual`} tone={fin.base >= fin.objetivo ? 'good' : 'warn'} />
-          <Stat label="Optimista" value={eur(fin.opt)} sub={`${a.rentOpt} % real anual`} />
+          <Stat label="Pesimista" value={eur(fin.pes)} sub={`${a.rentPes} % − comisiones = ${(a.rentPes - r.costeMedio).toFixed(1).replace('.', ',')} %`} />
+          <Stat label="Base" value={eur(fin.base)} sub={`${a.rentBase} % − comisiones = ${(a.rentBase - r.costeMedio).toFixed(1).replace('.', ',')} %`} tone={fin.base >= fin.objetivo ? 'good' : 'warn'} />
+          <Stat label="Optimista" value={eur(fin.opt)} sub={`${a.rentOpt} % − comisiones = ${(a.rentOpt - r.costeMedio).toFixed(1).replace('.', ',')} %`} />
           <Stat label="Objetivo vivienda" value={eur(fin.objetivo)} sub={`Alquiler × 12 / ${a.tasaRetiro} %`} />
         </div>
 

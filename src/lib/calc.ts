@@ -26,6 +26,8 @@ export interface Resumen {
   patrimonio: number
   mesesColchon: number
   gastosSinRellenar: number
+  /** Coste anual medio (%) de lo invertido, ponderado por saldo. */
+  costeMedio: number
 }
 
 export function resumir(e: Estado): Resumen {
@@ -47,6 +49,7 @@ export function resumir(e: Estado): Resumen {
   const efectivo = e.activos.filter((a) => a.tipo === 'efectivo').reduce((s, a) => s + a.valor, 0)
   const invertido = e.activos.filter((a) => a.tipo !== 'efectivo').reduce((s, a) => s + a.valor, 0)
   const liquidoInvertido = e.activos.filter((a) => a.tipo !== 'efectivo' && a.liquido).reduce((s, a) => s + a.valor, 0)
+  const costeMedio = invertido > 0 ? e.activos.filter((a) => a.tipo !== 'efectivo').reduce((s, a) => s + a.valor * (a.coste ?? 0), 0) / invertido : 0
   return {
     ingresoRecurrente,
     ingresoAnual,
@@ -68,6 +71,7 @@ export function resumir(e: Estado): Resumen {
     patrimonio: efectivo + invertido,
     mesesColchon: gastoMes > 0 ? efectivo / gastoMes : Infinity,
     gastosSinRellenar: e.gastos.filter((g) => !g.importe).length,
+    costeMedio,
   }
 }
 
@@ -116,7 +120,7 @@ export function flujo(e: Estado, meses = 24): MesFlujo[] {
   const a = e.ajustes
   const y0 = Number(a.inicio.slice(0, 4))
   // Rentabilidad nominal mensual: base real + 2,5 % de inflación de referencia (fija, para que los escenarios de gastos no inflen la inversión).
-  const rm = (1 + (a.rentBase + 2.5) / 100) ** (1 / 12) - 1
+  const rm = (1 + (a.rentBase - r.costeMedio + 2.5) / 100) ** (1 / 12) - 1
   let caja = r.efectivo
   let invertido = r.invertido
   const out: MesFlujo[] = []
@@ -305,7 +309,8 @@ export function proyeccion(e: Estado, extraMensual = 0): PuntoProyeccion[] {
   const objetivo = objetivoJubilacion(e)
   const out: PuntoProyeccion[] = []
   for (let n = 0; n <= Math.max(0, a.edadJubilacion - a.edad); n++) {
-    const v = (rp: number) => inicial * (1 + rp / 100) ** n + fvAnualidad(anual, rp / 100, n)
+    // Rentabilidad del mercado menos lo que te cobran los fondos.
+    const v = (rp: number) => inicial * (1 + (rp - r.costeMedio) / 100) ** n + fvAnualidad(anual, (rp - r.costeMedio) / 100, n)
     out.push({ edad: a.edad + n, pes: v(a.rentPes), base: v(a.rentBase), opt: v(a.rentOpt), objetivo, aportado: inicial + anual * n })
   }
   return out
@@ -321,7 +326,7 @@ export function aportacionNecesaria(e: Estado): number {
   const falta = fin.objetivo - fin.base
   if (falta <= 0) return 0
   const n = e.ajustes.edadJubilacion - e.ajustes.edad
-  const factor = fvAnualidad(1, e.ajustes.rentBase / 100, n)
+  const factor = fvAnualidad(1, (e.ajustes.rentBase - resumir(e).costeMedio) / 100, n)
   return factor > 0 ? falta / factor / 12 : Infinity
 }
 

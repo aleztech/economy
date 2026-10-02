@@ -31,18 +31,35 @@ async function remoto(): Promise<Sobre> {
 /** Completa campos nuevos en datos guardados con versiones anteriores. */
 const normalizar = (e: Estado): Estado => ({ ...e, ajustes: { ...AJUSTES_POR_DEFECTO, ...e.ajustes } })
 
-export async function desbloquear(password: string): Promise<{ estado: Estado; llave: Llave; origen: 'local' | 'inicial' }> {
+export interface Sesion {
+  estado: Estado
+  llave: Llave
+  origen: 'local' | 'inicial'
+  /** Datos publicados más recientes que los guardados en este navegador. */
+  nuevo?: Estado
+}
+
+const desdeRemoto = (d: Estado): Estado => normalizar({ ...d, baseSeed: d.actualizado })
+
+export async function desbloquear(password: string): Promise<Sesion> {
   const local = leerLocal()
   if (local) {
     try {
       const { datos, llave } = await abrir<Estado>(password, local)
-      return { estado: normalizar(datos), llave, origen: 'local' }
+      let nuevo: Estado | undefined
+      try {
+        const pub = (await abrir<Estado>(password, await remoto())).datos
+        if (pub.actualizado !== datos.baseSeed) nuevo = desdeRemoto(pub)
+      } catch {
+        /* sin conexión o contraseña distinta en los publicados: seguimos con lo local */
+      }
+      return { estado: normalizar(datos), llave, origen: 'local', nuevo }
     } catch {
       /* contraseña distinta a la guardada en este navegador: probamos con los datos iniciales */
     }
   }
   const { datos, llave } = await abrir<Estado>(password, await remoto())
-  return { estado: normalizar(datos), llave, origen: 'inicial' }
+  return { estado: desdeRemoto(datos), llave, origen: 'inicial' }
 }
 
 type Guardado = 'guardado' | 'guardando' | 'sin-almacenamiento'
@@ -56,12 +73,24 @@ interface Ctx {
   restaurar: (password: string) => Promise<void>
   cambiarPassword: (actual: string, nueva: string) => Promise<void>
   salir: () => void
+  pendiente: Estado | null
+  resolverPendiente: (cargar: boolean) => void
 }
 
 const StoreCtx = createContext<Ctx | null>(null)
 
-export function StoreProvider({ inicial, llave: llaveInicial, onSalir, children }: { inicial: Estado; llave: Llave; onSalir: () => void; children: ReactNode }) {
+export function StoreProvider({ inicial, nuevo, llave: llaveInicial, onSalir, children }: { inicial: Estado; nuevo?: Estado; llave: Llave; onSalir: () => void; children: ReactNode }) {
   const [estado, setEstado] = useState(inicial)
+  const [pendiente, setPendiente] = useState<Estado | null>(nuevo ?? null)
+  const resolverPendiente = useCallback(
+    (cargar: boolean) => {
+      if (!pendiente) return
+      if (cargar) setEstado(pendiente)
+      else setEstado((e) => ({ ...e, baseSeed: pendiente.baseSeed }))
+      setPendiente(null)
+    },
+    [pendiente],
+  )
   const [guardado, setGuardado] = useState<Guardado>('guardado')
   const llave = useRef(llaveInicial)
   const timer = useRef<number>()
@@ -93,7 +122,8 @@ export function StoreProvider({ inicial, llave: llaveInicial, onSalir, children 
 
   const restaurar = useCallback(async (password: string) => {
     const { datos } = await abrir<Estado>(password, await remoto())
-    setEstado(normalizar(datos))
+    setEstado(desdeRemoto(datos))
+    setPendiente(null)
   }, [])
 
   const cambiarPassword = useCallback(
@@ -108,7 +138,7 @@ export function StoreProvider({ inicial, llave: llaveInicial, onSalir, children 
   )
 
   return (
-    <StoreCtx.Provider value={{ estado, set, guardado, exportar, importar, restaurar, cambiarPassword, salir: onSalir }}>{children}</StoreCtx.Provider>
+    <StoreCtx.Provider value={{ estado, set, guardado, exportar, importar, restaurar, cambiarPassword, salir: onSalir, pendiente, resolverPendiente }}>{children}</StoreCtx.Provider>
   )
 }
 
