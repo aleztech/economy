@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import { ChevronDown, Plus, Trash2, Target } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { mensual, resumir, fvAnualidad } from '../lib/calc'
-import { CATEGORIAS, uid, type Categoria, type Frecuencia, type Gasto } from '../lib/types'
+import { CATEGORIAS, uid, type Categoria, type Frecuencia, type Gasto, type Indexacion } from '../lib/types'
 import { eur, eurCorto, MESES_LARGOS } from '../lib/format'
 import { Badge, Button, Card, Field, NumberInput, Section, Select, Stat, TextInput, Toggle, TooltipBox } from '../components/ui'
 
@@ -183,6 +183,21 @@ function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria }: {
             <Field label="Objetivo (equivalente al mes)" className="col-span-2">
               <NumberInput id={`o2-${g.id}`} optional value={g.objetivo} onChange={(n) => onChange({ objetivo: n })} />
             </Field>
+          )}
+          <Field label="Cómo sube con los años">
+            <Select id={`x-${g.id}`} value={g.indexa ?? (g.categoria === 'Vivienda' ? 'alquiler' : 'ipc')} onChange={(e) => onChange({ indexa: e.target.value as Indexacion })}>
+              <option value="ipc">Con la inflación</option>
+              <option value="alquiler">Como el alquiler (aniversario)</option>
+              <option value="propia">Un % propio</option>
+              <option value="ninguna">No sube</option>
+            </Select>
+          </Field>
+          {g.indexa === 'propia' ? (
+            <Field label="% anual">
+              <NumberInput id={`s-${g.id}`} value={g.subida} suffix="%" onChange={(n) => onChange({ subida: n })} />
+            </Field>
+          ) : (
+            <div />
           )}
           <Field label="Nota" className="col-span-2">
             <TextInput id={`t-${g.id}`} value={g.nota ?? ''} placeholder="Opcional" onChange={(e) => onChange({ nota: e.target.value || undefined })} />

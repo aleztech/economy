@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowRight } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { resumir, flujo } from '../lib/calc'
+import { resumir, flujo, mesesHorizonte, porAnos } from '../lib/calc'
 import { eur, eurCorto, pct, etiquetaMes } from '../lib/format'
 import { Card, Section, Stat, TooltipBox } from '../components/ui'
 import { Recomendaciones } from '../components/Recs'
@@ -14,6 +14,8 @@ export default function Resumen({ ir }: { ir: (v: Vista) => void }) {
   const { estado } = useStore()
   const r = useMemo(() => resumir(estado), [estado])
   const f = useMemo(() => flujo(estado, 12), [estado])
+  const largo = useMemo(() => porAnos(flujo(estado, mesesHorizonte(estado))), [estado])
+  const finLargo = largo[largo.length - 1]
 
   // Reparto del ingreso medio: categorías principales + aportaciones + lo que sobra.
   const reparto = useMemo(() => {
@@ -32,6 +34,25 @@ export default function Resumen({ ir }: { ir: (v: Vista) => void }) {
 
   return (
     <div className="rise flex flex-col gap-8">
+      <Card className="relative overflow-hidden border-0 p-5 md:p-6" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 92%, black) 0%, color-mix(in srgb, var(--accent) 70%, var(--c-in)) 100%)' }}>
+        <div className="relative z-10 flex flex-col gap-1 text-white">
+          <span className="text-[12px] font-medium tracking-wide text-white/75 uppercase">Patrimonio previsto a los {finLargo.edad}</span>
+          <span className="num text-[38px] leading-none font-semibold tracking-tight md:text-[44px]">{eur(finLargo.patrimonio)}</span>
+          <span className="mt-1 text-[13.5px] text-white/85">
+            Hoy {eur(r.patrimonio)} · {r.resultadoMes >= 0 ? `te sobran ${eur(r.resultadoMes)} al mes de media` : `te faltan ${eur(-r.resultadoMes)} al mes`}
+          </span>
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 opacity-60">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={largo} margin={{ left: 0, right: 0, top: 0, bottom: 0 }}>
+              <YAxis hide domain={['dataMin', 'dataMax']} />
+              <Area type="monotone" dataKey="patrimonio" stroke="rgba(255,255,255,.9)" strokeWidth={2} fill="rgba(255,255,255,.18)" isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="h-10" />
+      </Card>
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Ingresos / mes" value={eur(r.ingresoMedioMes)} sub={`Nómina ${eur(r.ingresoRecurrente)} + extras prorrateados`} />
         <Stat label="Gastos / mes" value={eur(r.gastoMes)} sub={r.gastosSinRellenar ? `${r.gastosSinRellenar} gastos sin rellenar` : `Fijos ${eur(r.gastoFijoMes)}`} tone={r.gastosSinRellenar ? 'warn' : undefined} />

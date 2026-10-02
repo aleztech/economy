@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import { alquilerVsCompra, aportacionNecesaria, planPiso, proyeccion, resumir } from '../lib/calc'
 import { eur, eurCorto, etiquetaMes, etiquetaMesLarga } from '../lib/format'
 import { Badge, Card, Field, Legend, NumberInput, Progress, Section, Stat, Toggle, TooltipBox } from '../components/ui'
+import { Cinturon, Riesgos } from './Escenarios'
 
 export default function Futuro() {
   const { estado, set } = useStore()
@@ -23,6 +24,9 @@ export default function Futuro() {
 
   return (
     <div className="rise flex flex-col gap-10">
+      <Cinturon />
+      <Riesgos />
+
       {/* Jubilación */}
       <Section title={`Patrimonio invertido a los ${a.edadJubilacion}`} hint="En euros de hoy (rentabilidad real, ya descontada la inflación). Incluye fondos, plan de pensiones y alternativos.">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

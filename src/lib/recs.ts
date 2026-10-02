@@ -1,6 +1,6 @@
 import type { Estado } from './types'
 import { DISCRECIONALES } from './types'
-import { resumir, flujo, proyeccion, aportacionNecesaria, planPiso, fvAnualidad, mensual } from './calc'
+import { resumir, flujo, proyeccion, aportacionNecesaria, planPiso, fvAnualidad, mensual, porAnos, mesesHorizonte } from './calc'
 import { eur, pct, etiquetaMesLarga } from './format'
 
 export type Nivel = 'alta' | 'media' | 'info' | 'ok'
@@ -207,6 +207,34 @@ export function recomendar(e: Estado): Recomendacion[] {
     out.push({ id: 'piso', nivel: 'info', area: 'Vivienda', titulo: `Entrada del piso: ${pp.mesesHasta === 0 ? 'ya la tienes' : etiquetaMesLarga(pp.fecha)}`, texto: `Necesitas ${eur(pp.necesario)} (entrada, gastos y colchón) para un piso de ${eur(a.precioPiso)}. Cuota estimada: ${eur(pp.cuota)} al mes a ${a.plazoHipoteca} años.` })
   else
     out.push({ id: 'piso', nivel: 'media', area: 'Vivienda', titulo: 'Con el ritmo actual no llegas a la entrada en 12 años', texto: `Necesitas ${eur(pp.necesario)}. Guarda los ingresos extra para el piso o baja el precio objetivo.` })
+
+  // 17. Tendencia: gastos que crecen más rápido que el sueldo
+  const anosF = porAnos(flujo(e, mesesHorizonte(e))).filter((x) => x.meses === 12)
+  if (anosF.length >= 2) {
+    const ini = anosF[0]
+    const ult = anosF[anosF.length - 1]
+    const peso = (x: typeof ini) => (x.alquiler + x.familia) / Math.max(1, x.ingresos)
+    const subida = peso(ult) - peso(ini)
+    if (subida > 0.005)
+      out.push({
+        id: 'tendencia',
+        nivel: subida > 0.03 ? 'media' : 'info',
+        area: 'Vivienda',
+        titulo: `Alquiler y pensión pasan del ${pct(peso(ini))} al ${pct(peso(ult))} de tus ingresos`,
+        texto: `Entre ${ini.ano} y ${ult.ano} suben más rápido que tu sueldo (+${a.subidaSalario} % al año). En ${ult.ano} te costarán ${eur(ult.alquiler + ult.familia)}, ${eur(ult.alquiler + ult.familia - ini.alquiler - ini.familia)} más que en ${ini.ano}.`,
+      })
+  }
+
+  // 18. Riesgo de depender del variable
+  const variable = e.ingresos.filter((i) => i.frecuencia === 'anual').reduce((s2, i) => s2 + i.importe, 0)
+  if (r.ingresoAnual > 0 && variable / r.ingresoAnual > 0.15)
+    out.push({
+      id: 'dependencia-variable',
+      nivel: 'info',
+      area: 'Ahorro',
+      titulo: `El ${pct(variable / r.ingresoAnual)} de tus ingresos no es nómina`,
+      texto: 'Variable y devolución de la renta no están garantizados. Haz que tus gastos fijos se paguen solo con la nómina y trata los extras como ahorro.',
+    })
 
   return out.sort((x, y) => ORDEN[x.nivel] - ORDEN[y.nivel] || (y.impacto ?? 0) - (x.impacto ?? 0))
 }

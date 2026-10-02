@@ -25,7 +25,12 @@ export interface Ingreso {
   frecuencia: 'mensual' | 'anual'
   /** Mes de cobro (1-12) si es anual. */
   mes?: number
+  /** Si sube cada enero con la subida salarial prevista. */
+  crece?: boolean
 }
+
+/** Cómo se actualiza un gasto con los años. */
+export type Indexacion = 'ipc' | 'alquiler' | 'propia' | 'ninguna'
 
 export interface Gasto {
   id: string
@@ -39,6 +44,12 @@ export interface Gasto {
   /** Importe mensual objetivo tras optimizar (opcional). */
   objetivo?: number
   nota?: string
+  /** Por defecto: alquiler para Vivienda, IPC para el resto. */
+  indexa?: Indexacion
+  /** % anual si indexa = 'propia'. */
+  subida?: number
+  /** Año al que corresponde el importe; sube a partir del siguiente. */
+  anoBase?: number
 }
 
 export type Destino = 'fondos' | 'pension' | 'colchon' | 'piso'
@@ -57,6 +68,8 @@ export interface Evento {
   /** AAAA-MM */
   fecha: string
   tipo: 'gasto' | 'ingreso'
+  /** Si el ingreso viene de liquidar un activo, se retira de patrimonio ese mes. */
+  activoId?: string
 }
 
 export type TipoActivo = 'indexado' | 'gestion-activa' | 'efectivo' | 'pension' | 'alternativo'
@@ -92,6 +105,14 @@ export interface Ajustes {
   usarFondosParaPiso: boolean
   /** Primer mes de la previsión, AAAA-MM. */
   inicio: string
+  /** Subida salarial anual prevista (%), cada enero. */
+  subidaSalario: number
+  /** Inflación de los gastos corrientes (%), cada enero. */
+  inflacionGastos: number
+  /** Mes en que se actualiza el alquiler (aniversario del contrato). */
+  mesSubidaAlquiler: number
+  /** Años de previsión detallada. */
+  anosPrevision: number
 }
 
 export interface Estado {
@@ -124,6 +145,10 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   mantenimientoPct: 1,
   usarFondosParaPiso: false,
   inicio: '2026-11',
+  subidaSalario: 1,
+  inflacionGastos: 2.5,
+  mesSubidaAlquiler: 11,
+  anosPrevision: 5,
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 10)

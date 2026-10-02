@@ -73,51 +73,215 @@ export function resumir(e: Estado): Resumen {
 
 export interface MesFlujo {
   ym: string
+  ano: number
+  edad: number
   ingresos: number
+  nomina: number
+  ingresosAnuales: number
+  ingresosExtra: number
   gastos: number
+  alquiler: number
+  familia: number
+  otrosGastos: number
   extraordinarios: number
   aportaciones: number
   neto: number
   efectivo: number
+  invertido: number
+  patrimonio: number
   notas: string[]
 }
 
-/** Flujo de caja mes a mes: lo que entra y sale de tu cuenta y cómo evoluciona la liquidez. */
+/** Factor de crecimiento de un gasto en un mes dado de la previsión. */
+function factorGasto(g: Gasto, e: Estado, ym: string, k: number): number {
+  const a = e.ajustes
+  const y = Number(ym.slice(0, 4))
+  const y0 = Number(a.inicio.slice(0, 4))
+  const modo = g.indexa ?? (g.categoria === 'Vivienda' ? 'alquiler' : 'ipc')
+  if (modo === 'ninguna') return 1
+  if (modo === 'alquiler') {
+    // Sube en cada aniversario del contrato posterior al inicio de la previsión.
+    let n = 0
+    for (let j = 1; j <= k; j++) if (Number(sumarMeses(a.inicio, j).slice(5)) === a.mesSubidaAlquiler) n++
+    return (1 + a.subidaAlquiler / 100) ** n
+  }
+  const pctAnual = modo === 'propia' ? g.subida ?? a.inflacionGastos : a.inflacionGastos
+  const base = g.anoBase ?? y0
+  return (1 + pctAnual / 100) ** Math.max(0, y - base)
+}
+
+/** Flujo de caja mes a mes con subidas salariales, actualización de gastos e inversión. */
 export function flujo(e: Estado, meses = 24): MesFlujo[] {
   const r = resumir(e)
+  const a = e.ajustes
+  const y0 = Number(a.inicio.slice(0, 4))
+  // Rentabilidad nominal mensual: base real + 2,5 % de inflación de referencia (fija, para que los escenarios de gastos no inflen la inversión).
+  const rm = (1 + (a.rentBase + 2.5) / 100) ** (1 / 12) - 1
   let caja = r.efectivo
+  let invertido = r.invertido
   const out: MesFlujo[] = []
   for (let k = 0; k < meses; k++) {
-    const ym = sumarMeses(e.ajustes.inicio, k)
+    const ym = sumarMeses(a.inicio, k)
+    const y = Number(ym.slice(0, 4))
     const m = Number(ym.slice(5))
     const notas: string[] = []
-    let ingresos = r.ingresoRecurrente
-    for (const i of e.ingresos) if (i.frecuencia === 'anual' && (i.mes ?? 1) === m) {
-      ingresos += i.importe
-      notas.push(`+ ${i.nombre}`)
+    let nomina = 0
+    let ingresosAnuales = 0
+    let ingresosExtra = 0
+    for (const i of e.ingresos) {
+      const f = i.crece ? (1 + a.subidaSalario / 100) ** Math.max(0, y - y0) : 1
+      if (i.frecuencia === 'mensual') nomina += i.importe * f
+      else if ((i.mes ?? 1) === m) {
+        ingresosAnuales += i.importe * f
+        notas.push(`+ ${i.nombre}`)
+      }
     }
-    let gastos = 0
+    let alquiler = 0
+    let familia = 0
+    let otrosGastos = 0
     for (const g of e.gastos) {
-      if (g.frecuencia === 'mensual') gastos += g.importe
-      else if (g.frecuencia === 'trimestral' && (m - 1) % 3 === ((g.mes ?? 1) - 1) % 3) gastos += g.importe
+      let imp = 0
+      if (g.frecuencia === 'mensual') imp = g.importe
+      else if (g.frecuencia === 'trimestral' && (m - 1) % 3 === ((g.mes ?? 1) - 1) % 3) imp = g.importe
       else if (g.frecuencia === 'anual' && (g.mes ?? 1) === m) {
-        gastos += g.importe
+        imp = g.importe
         if (g.importe) notas.push(`− ${g.nombre}`)
       }
+      if (!imp) continue
+      imp *= factorGasto(g, e, ym, k)
+      if (g.categoria === 'Vivienda') alquiler += imp
+      else if (g.categoria === 'Familia') familia += imp
+      else otrosGastos += imp
     }
     let extraordinarios = 0
     for (const ev of e.eventos) if (ev.fecha === ym) {
       if (ev.tipo === 'gasto') extraordinarios += ev.importe
-      else ingresos += ev.importe
+      else {
+        ingresosExtra += ev.importe
+        if (ev.activoId) {
+          const act = e.activos.find((x) => x.id === ev.activoId)
+          if (act) invertido = Math.max(0, invertido - act.valor)
+        }
+      }
       notas.push(`${ev.tipo === 'gasto' ? '−' : '+'} ${ev.nombre}`)
     }
-    // Las aportaciones a colchón/piso se quedan en liquidez; las de fondos y pensión salen.
-    const aportaciones = e.aportaciones.filter((a) => a.destino === 'fondos' || a.destino === 'pension').reduce((s, a) => s + a.importe, 0)
+    // Las aportaciones a colchón/piso se quedan en liquidez; las de fondos y pensión salen hacia la inversión.
+    const aportaciones = e.aportaciones.filter((x) => x.destino === 'fondos' || x.destino === 'pension').reduce((s, x) => s + x.importe, 0)
+    const ingresos = nomina + ingresosAnuales + ingresosExtra
+    const gastos = alquiler + familia + otrosGastos
     const neto = ingresos - gastos - extraordinarios - aportaciones
     caja += neto
-    out.push({ ym, ingresos, gastos, extraordinarios, aportaciones, neto, efectivo: caja, notas })
+    invertido = invertido * (1 + rm) + aportaciones
+    out.push({
+      ym, ano: y, edad: a.edad + (y - y0), ingresos, nomina, ingresosAnuales, ingresosExtra, gastos, alquiler, familia, otrosGastos,
+      extraordinarios, aportaciones, neto, efectivo: caja, invertido, patrimonio: caja + invertido, notas,
+    })
   }
   return out
+}
+
+/** Meses de previsión hasta el final del último año del horizonte. */
+export const mesesHorizonte = (e: Estado, anos = e.ajustes.anosPrevision) => {
+  const m0 = Number(e.ajustes.inicio.slice(5))
+  return 12 - m0 + 1 + anos * 12
+}
+
+export interface AnoFlujo {
+  ano: number
+  edad: number
+  meses: number
+  ingresos: number
+  nomina: number
+  ingresosAnuales: number
+  ingresosExtra: number
+  gastos: number
+  alquiler: number
+  familia: number
+  otrosGastos: number
+  extraordinarios: number
+  aportaciones: number
+  neto: number
+  efectivo: number
+  invertido: number
+  patrimonio: number
+  tasaAhorro: number
+}
+
+export function porAnos(f: MesFlujo[]): AnoFlujo[] {
+  const m = new Map<number, MesFlujo[]>()
+  for (const x of f) m.set(x.ano, [...(m.get(x.ano) ?? []), x])
+  return [...m.entries()].map(([ano, l]) => {
+    const sum = (k: keyof MesFlujo) => l.reduce((s, x) => s + (x[k] as number), 0)
+    const last = l[l.length - 1]
+    const ingresos = sum('ingresos')
+    const gastos = sum('gastos')
+    return {
+      ano, edad: last.edad, meses: l.length, ingresos, nomina: sum('nomina'), ingresosAnuales: sum('ingresosAnuales'), ingresosExtra: sum('ingresosExtra'),
+      gastos, alquiler: sum('alquiler'), familia: sum('familia'), otrosGastos: sum('otrosGastos'), extraordinarios: sum('extraordinarios'),
+      aportaciones: sum('aportaciones'), neto: sum('neto'), efectivo: last.efectivo, invertido: last.invertido, patrimonio: last.patrimonio,
+      tasaAhorro: ingresos > 0 ? (ingresos - gastos - sum('extraordinarios')) / ingresos : 0,
+    }
+  })
+}
+
+/** Copia del estado con los gastos llevados a su objetivo de recorte. */
+export function conObjetivos(e: Estado): Estado {
+  return {
+    ...e,
+    gastos: e.gastos.map((g) => {
+      if (g.objetivo == null) return g
+      const f = g.frecuencia === 'mensual' ? 1 : g.frecuencia === 'trimestral' ? 3 : 12
+      return { ...g, importe: g.objetivo * f }
+    }),
+  }
+}
+
+export interface Estres {
+  id: string
+  nombre: string
+  descripcion: string
+  efectivoFinal: number
+  patrimonioFinal: number
+  minimoEfectivo: number
+  mesMinimo: string
+  diferencia: number
+}
+
+/** Escenarios de riesgo: misma previsión con un golpe aplicado. */
+export function pruebasEstres(e: Estado): Estres[] {
+  const n = mesesHorizonte(e)
+  const base = flujo(e, n)
+  const fin = base[base.length - 1]
+  const r = resumir(e)
+  const casos: { id: string; nombre: string; descripcion: string; est: Estado; ajusteInv?: number }[] = [
+    { id: 'base', nombre: 'Previsión base', descripcion: 'Lo que tienes configurado.', est: e },
+    {
+      id: 'sin-variable',
+      nombre: 'Sin variable',
+      descripcion: 'El variable no se cobra ningún año.',
+      est: { ...e, ingresos: e.ingresos.filter((i) => !(i.frecuencia === 'anual' && /variable/i.test(i.nombre))) },
+    },
+    {
+      id: 'paro',
+      nombre: '6 meses sin nómina',
+      descripcion: 'Pierdes el empleo el próximo año durante 6 meses (sin contar el paro).',
+      est: {
+        ...e,
+        eventos: [...e.eventos, { id: 'paro', nombre: 'Sin nómina 6 meses', importe: r.ingresoRecurrente * 6, fecha: sumarMeses(e.ajustes.inicio, 12), tipo: 'gasto' }],
+      },
+    },
+    { id: 'alquiler', nombre: 'Alquiler +5 % al año', descripcion: 'El alquiler sube el doble de lo previsto (cambio de piso o fin del contrato).', est: { ...e, ajustes: { ...e.ajustes, subidaAlquiler: 5 } } },
+    { id: 'inflacion', nombre: 'Inflación del 4 %', descripcion: 'Los gastos corrientes suben un 4 % al año y el sueldo solo un 1 %.', est: { ...e, ajustes: { ...e.ajustes, inflacionGastos: 4 } } },
+    { id: 'bolsa', nombre: 'Caída de bolsa del 30 %', descripcion: 'Tus fondos y el plan de pensiones caen un 30 % el primer año y no recuperan en el periodo.', est: e, ajusteInv: 0.7 },
+  ]
+  return casos.map((c) => {
+    const f = flujo(c.est, n)
+    const ult = f[f.length - 1]
+    const inv = c.ajusteInv != null ? ult.invertido * c.ajusteInv : ult.invertido
+    const min = f.reduce((m, x) => (x.efectivo < m.efectivo ? x : m), f[0])
+    const patrimonioFinal = ult.efectivo + inv
+    return { id: c.id, nombre: c.nombre, descripcion: c.descripcion, efectivoFinal: ult.efectivo, patrimonioFinal, minimoEfectivo: min.efectivo, mesMinimo: min.ym, diferencia: patrimonioFinal - fin.patrimonio }
+  })
 }
 
 /** Valor futuro de una aportación anual constante a tipo r durante n años (fin de año). */

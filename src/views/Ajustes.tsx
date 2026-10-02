@@ -16,6 +16,16 @@ const CAMPOS: { titulo: string; campos: { k: CampoNum; label: string; suf: strin
     ],
   },
   {
+    titulo: 'Previsión',
+    campos: [
+      { k: 'subidaSalario', label: 'Subida salarial anual', suf: '%' },
+      { k: 'inflacionGastos', label: 'Inflación de gastos', suf: '%' },
+      { k: 'subidaAlquiler', label: 'Subida anual alquiler', suf: '%' },
+      { k: 'mesSubidaAlquiler', label: 'Mes de subida alquiler', suf: '(1-12)' },
+      { k: 'anosPrevision', label: 'Años de previsión', suf: 'años' },
+    ],
+  },
+  {
     titulo: 'Rentabilidad real anual (sin inflación)',
     campos: [
       { k: 'rentPes', label: 'Pesimista', suf: '%' },
@@ -27,7 +37,6 @@ const CAMPOS: { titulo: string; campos: { k: CampoNum; label: string; suf: strin
   {
     titulo: 'Vivienda',
     campos: [
-      { k: 'subidaAlquiler', label: 'Subida anual alquiler', suf: '%' },
       { k: 'precioPiso', label: 'Precio piso objetivo', suf: '€' },
       { k: 'gastosCompraPct', label: 'Gastos de compra', suf: '%' },
       { k: 'colchonMeses', label: 'Colchón tras comprar', suf: 'meses' },
@@ -90,7 +99,7 @@ export default function Ajustes() {
         </Section>
       ))}
 
-      <Section title="Previsión">
+      <Section title="Inicio de la previsión">
         <Card className="grid grid-cols-2 gap-3 p-4">
           <Field label="Primer mes de la previsión">
             <TextInput id="aj-inicio" type="month" value={a.inicio} onChange={(e) => e.target.value && set((s) => ({ ...s, ajustes: { ...s.ajustes, inicio: e.target.value } }))} />
