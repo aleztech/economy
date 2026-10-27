@@ -160,6 +160,8 @@ export interface Estado {
   activos: Activo[]
   /** Préstamos con su cuadro de amortización (opcional en datos antiguos). */
   prestamos?: Prestamo[]
+  /** Movimientos importados de extractos (solo en este navegador, cifrados). */
+  movimientos?: import('./movimientos').Movimiento[]
   ajustes: Ajustes
   actualizado: string
   /** Fecha de los datos publicados de los que parte este estado. */

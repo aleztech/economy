@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
-import { CalendarRange, Landmark, LayoutDashboard, Lock, Receipt, Settings, TrendingUp, Eye, EyeOff, LoaderCircle, RefreshCw } from 'lucide-react'
+import { CalendarRange, Landmark, LayoutDashboard, Lock, Receipt, Scissors, Settings, TrendingUp, Eye, EyeOff, LoaderCircle, RefreshCw } from 'lucide-react'
 import { StoreProvider, desbloquear, reanudar, useStore, type Sesion } from './lib/store'
 import Resumen from './views/Resumen'
 import Gastos from './views/Gastos'
+import Recortes from './views/Recortes'
 import Prevision from './views/Prevision'
 import Futuro from './views/Futuro'
 import Patrimonio from './views/Patrimonio'
 import Ajustes from './views/Ajustes'
 
-export type Vista = 'resumen' | 'gastos' | 'prevision' | 'futuro' | 'patrimonio' | 'ajustes'
+export type Vista = 'resumen' | 'gastos' | 'recortes' | 'prevision' | 'futuro' | 'patrimonio' | 'ajustes'
 
 const NAV: { id: Vista; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'resumen', label: 'Resumen', icon: LayoutDashboard },
   { id: 'gastos', label: 'Gastos', icon: Receipt },
+  { id: 'recortes', label: 'Recortes', icon: Scissors },
   { id: 'prevision', label: 'Previsión', icon: CalendarRange },
   { id: 'futuro', label: 'Futuro', icon: TrendingUp },
   { id: 'patrimonio', label: 'Patrimonio', icon: Landmark },
@@ -169,6 +171,7 @@ function Shell() {
           )}
           {vista === 'resumen' && <Resumen ir={ir} />}
           {vista === 'gastos' && <Gastos />}
+          {vista === 'recortes' && <Recortes />}
           {vista === 'prevision' && <Prevision />}
           {vista === 'futuro' && <Futuro />}
           {vista === 'patrimonio' && <Patrimonio />}
@@ -178,9 +181,9 @@ function Shell() {
 
       {/* Barra inferior en móvil */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-6">
           {NAV.map((n) => (
-            <button key={n.id} type="button" onClick={() => ir(n.id)} className={clsx('flex h-16 flex-col items-center justify-center gap-1 text-[10.5px] font-medium', vista === n.id ? 'text-accent' : 'text-muted')}>
+            <button key={n.id} type="button" onClick={() => ir(n.id)} className={clsx('flex h-16 min-w-0 flex-col items-center justify-center gap-1 text-[10px] font-medium', vista === n.id ? 'text-accent' : 'text-muted')}>
               <n.icon size={21} strokeWidth={vista === n.id ? 2.25 : 1.75} />
               {n.label}
             </button>

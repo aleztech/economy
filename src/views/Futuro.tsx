@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { alquilerVsCompra, aportacionNecesaria, planPiso, proyeccion, resumir } from '../lib/calc'
 import { eur, eurCorto, etiquetaMes, etiquetaMesLarga } from '../lib/format'
 import { Badge, Card, Field, Legend, NumberInput, Progress, Section, Stat, Toggle, TooltipBox } from '../components/ui'
-import { Cinturon, Riesgos } from './Escenarios'
+import { Cinturon, Pert, Riesgos } from './Escenarios'
 
 export default function Futuro() {
   const { estado, set } = useStore()
@@ -25,6 +25,7 @@ export default function Futuro() {
   return (
     <div className="rise flex flex-col gap-10">
       <Cinturon />
+      <Pert />
       <Riesgos />
 
       {/* Jubilación */}
