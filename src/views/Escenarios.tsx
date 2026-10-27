@@ -158,3 +158,99 @@ export function Riesgos() {
     </Section>
   )
 }
+
+/** Gastos a medio camino entre lo que gastas hoy y tu objetivo. */
+function aMedioCamino(e: Estado): Estado {
+  return {
+    ...e,
+    gastos: e.gastos.map((g) => {
+      if (g.objetivo == null) return g
+      const f = g.frecuencia === 'mensual' ? 1 : g.frecuencia === 'trimestral' ? 3 : 12
+      return { ...g, importe: (g.importe + g.objetivo * f) / 2 }
+    }),
+  }
+}
+
+/** Estimación PERT: optimista (cumples todos los objetivos), más probable (a medio camino) y pesimista (sigues como hoy). */
+export function Pert() {
+  const { estado } = useStore()
+  const n = mesesHorizonte(estado)
+  const o = useMemo(() => porAnos(flujo(conObjetivos(estado), n)), [estado, n])
+  const m = useMemo(() => porAnos(flujo(aMedioCamino(estado), n)), [estado, n])
+  const p = useMemo(() => porAnos(flujo(estado, n)), [estado, n])
+  const datos = p.map((x, i) => {
+    const O = o[i].patrimonio
+    const M = m[i].patrimonio
+    const P = x.patrimonio
+    return { ano: x.ano, edad: x.edad, O, M, P, E: (O + 4 * M + P) / 6, sigma: Math.abs(O - P) / 6, efO: o[i].efectivo, efP: x.efectivo }
+  })
+  const fin = datos[datos.length - 1]
+  const r0 = resumir(estado)
+  const rO = resumir(conObjetivos(estado))
+  const rM = resumir(aMedioCamino(estado))
+  const ahorroE = ((r0.resultadoMes + 4 * rM.resultadoMes + rO.resultadoMes) / 6)
+  const minP = useMemo(() => flujo(estado, n).reduce((mn, x) => Math.min(mn, x.efectivo), Infinity), [estado, n])
+
+  return (
+    <Section title="Escenarios PERT" hint="Tres escenarios con tus gastos: optimista (cumples todos los objetivos de recorte), más probable (te quedas a medio camino) y pesimista (sigues gastando como hoy). La estimación PERT pondera el más probable ×4: (O + 4M + P) / 6.">
+      <Card className="flex flex-col gap-5 p-4 md:p-5">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat label={`Esperado a los ${fin.edad}`} value={eur(fin.E)} sub={`±${eur(fin.sigma)} (1 desviación)`} tone="good" />
+          <Stat label="Optimista" value={eur(fin.O)} sub={`Ahorro ${eur(rO.resultadoMes)}/mes`} />
+          <Stat label="Pesimista" value={eur(fin.P)} sub={`Ahorro ${eur(r0.resultadoMes)}/mes`} tone={fin.efP < 0 ? 'bad' : undefined} />
+          <Stat label="Ahorro esperado" value={`${eur(ahorroE)}/mes`} sub={minP < 0 ? 'En el pesimista te quedas sin efectivo' : 'Sin quedarte sin efectivo en ningún caso'} tone={minP < 0 ? 'warn' : 'good'} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Legend items={[{ label: 'Optimista', color: 'var(--good)' }, { label: 'Esperado (PERT)', color: 'var(--accent)' }, { label: 'Más probable', color: 'var(--info)', dashed: true }, { label: 'Pesimista', color: 'var(--bad)', dashed: true }]} />
+          <div className="-mx-2 h-56 md:mx-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={datos} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                <CartesianGrid vertical={false} stroke="var(--c-grid)" />
+                <XAxis dataKey="ano" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={eurCorto} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={52} />
+                <Tooltip
+                  cursor={{ stroke: 'var(--line)' }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null
+                    const x = payload[0].payload as (typeof datos)[number]
+                    return <TooltipBox title={`Final de ${x.ano} · ${x.edad} años`} rows={[{ label: 'Optimista', value: x.O, color: 'var(--good)' }, { label: 'Esperado', value: x.E, color: 'var(--accent)' }, { label: 'Más probable', value: x.M, color: 'var(--info)' }, { label: 'Pesimista', value: x.P, color: 'var(--bad)' }]} />
+                  }}
+                />
+                <Line dataKey="O" stroke="var(--good)" strokeWidth={2} dot={false} />
+                <Line dataKey="M" stroke="var(--info)" strokeDasharray="5 4" strokeWidth={2} dot={false} />
+                <Line dataKey="P" stroke="var(--bad)" strokeDasharray="5 4" strokeWidth={2} dot={false} />
+                <Line dataKey="E" stroke="var(--accent)" strokeWidth={3} dot={{ r: 3, fill: 'var(--accent)' }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] text-[13px]">
+            <thead>
+              <tr className="border-b border-line text-right text-muted">
+                <th className="px-3 py-2 text-left font-medium">Año</th>
+                <th className="px-3 py-2 font-medium">Pesimista</th>
+                <th className="px-3 py-2 font-medium">Más probable</th>
+                <th className="px-3 py-2 font-medium">Optimista</th>
+                <th className="px-3 py-2 font-medium">Esperado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {datos.map((x) => (
+                <tr key={x.ano} className="num text-right">
+                  <td className="px-3 py-2 text-left font-sans font-medium">
+                    {x.ano} <span className="font-normal text-muted">· {x.edad}</span>
+                  </td>
+                  <td className="px-3 py-2">{eur(x.P)}</td>
+                  <td className="px-3 py-2">{eur(x.M)}</td>
+                  <td className="px-3 py-2">{eur(x.O)}</td>
+                  <td className="px-3 py-2 font-semibold">{eur(x.E)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </Section>
+  )
+}
