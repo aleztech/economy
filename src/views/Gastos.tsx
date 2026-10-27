@@ -3,9 +3,9 @@ import clsx from 'clsx'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Pencil, Plus, Trash2, Target } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { mensual, resumir, fvAnualidad } from '../lib/calc'
+import { mensual, mensualMedio, resumir, fvAnualidad, vigente } from '../lib/calc'
 import { CATEGORIAS, uid, type Categoria, type Frecuencia, type Gasto, type Indexacion } from '../lib/types'
-import { eur, eurCorto, MESES_LARGOS } from '../lib/format'
+import { eur, eurCorto, etiquetaMes, MESES_LARGOS } from '../lib/format'
 import { Badge, Button, Card, Field, NumberInput, Section, Select, Stat, TextInput, Toggle, TooltipBox } from '../components/ui'
 
 const FREQ: Record<Frecuencia, string> = { mensual: 'Mensual', trimestral: 'Trimestral', anual: 'Anual' }
@@ -40,14 +40,14 @@ export default function Gastos() {
   return (
     <div className="rise flex flex-col gap-8">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Total al mes" value={eur(r.gastoMes)} sub={`${eur(r.gastoMes * 12)} al año`} />
+        <Stat label="Total al mes" value={eur(r.gastoMes)} sub={r.cuotaMes > 0 ? `Media de 12 meses · incluye ${eur(r.cuotaMes)} de préstamos` : `${eur(r.gastoMes * 12)} al año`} />
         <Stat label="Fijos" value={eur(r.gastoFijoMes)} sub="Vivienda, familia, suministros…" />
         <Stat label="Variables" value={eur(r.gastoVariableMes)} sub="Donde más margen hay" />
         <Stat label="Recorte objetivo" value={eur(ahorroObjetivos)} sub={ahorroObjetivos ? `${eur(fvAnualidad(ahorroObjetivos * 12, a.rentBase / 100, anos))} a los ${a.edadJubilacion}` : 'Fija objetivos en cada gasto'} tone={ahorroObjetivos ? 'good' : undefined} />
       </div>
 
       {r.porCategoria.length > 0 && (
-        <Section title="Por categoría" hint="Equivalente mensual (los gastos anuales y trimestrales se prorratean).">
+        <Section title="Por categoría" hint="Media mensual de los próximos 12 meses: los anuales se prorratean, los gastos con fechas cuentan solo los meses vigentes y se suman las cuotas de préstamos.">
           <Card className="p-2 pt-3 md:p-4">
             <div style={{ height: Math.max(140, r.porCategoria.length * 38) }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -92,11 +92,11 @@ export default function Gastos() {
               <div key={cat} className="flex flex-col gap-2">
                 <div className="flex items-center justify-between px-1">
                   <span className="eyebrow">{cat}</span>
-                  <span className="num text-[12px] text-muted">{eur(lista.reduce((s, g) => s + mensual(g), 0))}/mes</span>
+                  <span className="num text-[12px] text-muted">{eur(lista.reduce((s, g) => s + mensualMedio(g, a.inicio), 0))}/mes</span>
                 </div>
                 <Card className="divide-y divide-line overflow-hidden">
                   {lista.map((g) => (
-                    <FilaGasto key={g.id} g={g} abierto={abierto === g.id} onToggle={() => setAbierto(abierto === g.id ? null : g.id)} onChange={(p) => actualizar(g.id, p)} onBorrar={() => borrar(g.id)} />
+                    <FilaGasto key={g.id} g={g} inactivo={!vigente(g, a.inicio)} abierto={abierto === g.id} onToggle={() => setAbierto(abierto === g.id ? null : g.id)} onChange={(p) => actualizar(g.id, p)} onBorrar={() => borrar(g.id)} />
                   ))}
                 </Card>
               </div>
@@ -105,7 +105,7 @@ export default function Gastos() {
         ) : (
           <Card className="divide-y divide-line overflow-hidden">
             {ordenados.map((g) => (
-              <FilaGasto key={g.id} g={g} conCategoria abierto={abierto === g.id} onToggle={() => setAbierto(abierto === g.id ? null : g.id)} onChange={(p) => actualizar(g.id, p)} onBorrar={() => borrar(g.id)} />
+              <FilaGasto key={g.id} g={g} inactivo={!vigente(g, a.inicio)} conCategoria abierto={abierto === g.id} onToggle={() => setAbierto(abierto === g.id ? null : g.id)} onChange={(p) => actualizar(g.id, p)} onBorrar={() => borrar(g.id)} />
             ))}
           </Card>
         )}
@@ -114,7 +114,7 @@ export default function Gastos() {
   )
 }
 
-function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria }: { g: Gasto; abierto: boolean; onToggle: () => void; onChange: (p: Partial<Gasto>) => void; onBorrar: () => void; conCategoria?: boolean }) {
+function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria, inactivo }: { g: Gasto; abierto: boolean; onToggle: () => void; onChange: (p: Partial<Gasto>) => void; onBorrar: () => void; conCategoria?: boolean; inactivo?: boolean }) {
   const [confirmar, setConfirmar] = useState(false)
   const m = mensual(g)
   const vacio = !g.importe
@@ -154,6 +154,8 @@ function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria }: {
               {g.frecuencia !== 'mensual' && <Badge tone="info">{FREQ[g.frecuencia]} · {eur(g.importe)}</Badge>}
               {g.fijo && <Badge>Fijo</Badge>}
               {vacio && <Badge tone="warn">Sin rellenar</Badge>}
+              {g.desde && <Badge tone="info">Desde {etiquetaMes(g.desde)}</Badge>}
+              {g.hasta && <Badge tone="info">Hasta {etiquetaMes(g.hasta)}</Badge>}
               {conObjetivo && (
                 <Badge tone="good">
                   <Target size={11} /> {eur(g.objetivo!)}
@@ -161,7 +163,7 @@ function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria }: {
               )}
             </span>
           </div>
-          <span className={clsx('num shrink-0 text-[15px] font-medium', vacio && 'text-muted')}>{eur(m, m % 1 !== 0)}</span>
+          <span className={clsx('num shrink-0 text-[15px] font-medium', (vacio || inactivo) && 'text-muted')}>{eur(m, m % 1 !== 0)}</span>
         </button>
         <button type="button" onClick={editar} aria-label={`Editar ${g.nombre}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg">
           <Pencil size={16} />
@@ -230,6 +232,12 @@ function FilaGasto({ g, abierto, onToggle, onChange, onBorrar, conCategoria }: {
           ) : (
             <div />
           )}
+          <Field label="Desde (opcional)">
+            <TextInput id={`d-${g.id}`} type="month" value={g.desde ?? ''} onChange={(e) => onChange({ desde: e.target.value || undefined })} />
+          </Field>
+          <Field label="Hasta (opcional)">
+            <TextInput id={`h-${g.id}`} type="month" value={g.hasta ?? ''} onChange={(e) => onChange({ hasta: e.target.value || undefined })} />
+          </Field>
           <Field label="Nota" className="col-span-2">
             <TextInput id={`t-${g.id}`} value={g.nota ?? ''} placeholder="Opcional" onChange={(e) => onChange({ nota: e.target.value || undefined })} />
           </Field>

@@ -1,5 +1,72 @@
-import type { Estado, Gasto, Categoria } from './types'
+import type { Estado, Gasto, Categoria, Prestamo } from './types'
 import { sumarMeses } from './format'
+
+/** Si un gasto o ingreso con fechas de inicio y fin está vigente en el mes ym (AAAA-MM). */
+export const vigente = (x: { desde?: string; hasta?: string }, ym: string) => (!x.desde || ym >= x.desde) && (!x.hasta || ym <= x.hasta)
+
+/** Importe mensual medio de un gasto en los 12 meses que empiezan en hoy (cuenta solo los meses vigentes). */
+export const mensualMedio = (g: Gasto, hoy: string) => (mensual(g) * Array.from({ length: 12 }, (_, k) => sumarMeses(hoy, k)).filter((ym) => vigente(g, ym)).length) / 12
+
+const cuotaFrancesa = (capital: number, i: number, n: number) => (n <= 0 ? capital : i === 0 ? capital / n : (capital * i) / (1 - (1 + i) ** -n))
+
+export interface MesPrestamo {
+  ym: string
+  cuota: number
+  intereses: number
+  amortizado: number
+  /** Pago anticipado de ese mes. */
+  anticipado: number
+  /** Capital pendiente tras pagar la cuota y el anticipado. */
+  pendiente: number
+}
+
+export interface CuadroPrestamo {
+  meses: MesPrestamo[]
+  cuotaInicial: number
+  intereses: number
+  /** Intereses sin amortizaciones anticipadas, para comparar. */
+  interesesSinAnticipos: number
+  fin: string
+}
+
+/** Cuadro de amortización (sistema francés) con pagos anticipados. */
+export function cuadroPrestamo(p: Prestamo, conAnticipos = true): CuadroPrestamo {
+  const i = (1 + p.tae / 100) ** (1 / 12) - 1
+  let pendiente = p.capital
+  let cuota = cuotaFrancesa(p.capital, i, p.plazoMeses)
+  const cuotaInicial = cuota
+  const meses: MesPrestamo[] = []
+  let intereses = 0
+  for (let k = 0; k < p.plazoMeses + 1 && pendiente > 0.005; k++) {
+    const ym = sumarMeses(p.inicio, k)
+    const int = pendiente * i
+    const pago = Math.min(cuota, pendiente + int)
+    const amortizado = pago - int
+    pendiente -= amortizado
+    intereses += int
+    let anticipado = 0
+    if (conAnticipos)
+      for (const a of p.amortizaciones.filter((x) => x.fecha === ym)) {
+        const imp = Math.min(Math.max(0, a.importe), pendiente)
+        if (!imp) continue
+        anticipado += imp
+        pendiente -= imp
+        if (a.modo === 'cuota') cuota = cuotaFrancesa(pendiente, i, p.plazoMeses - k - 1)
+      }
+    if (pendiente < 0.005) pendiente = 0
+    meses.push({ ym, cuota: pago, intereses: int, amortizado, anticipado, pendiente })
+  }
+  const sin = conAnticipos && p.amortizaciones.length ? cuadroPrestamo(p, false).intereses : intereses
+  return { meses, cuotaInicial, intereses, interesesSinAnticipos: sin, fin: meses.length ? meses[meses.length - 1].ym : p.inicio }
+}
+
+/** Capital pendiente de un préstamo justo antes del mes ym. */
+export function pendienteAntesDe(p: Prestamo, ym: string): number {
+  if (ym <= p.inicio) return p.capital
+  const c = cuadroPrestamo(p)
+  const prev = c.meses.filter((m) => m.ym < ym)
+  return prev.length ? prev[prev.length - 1].pendiente : p.capital
+}
 
 /** Importe mensual equivalente de un gasto. */
 export const mensual = (g: Pick<Gasto, 'importe' | 'frecuencia'>) =>
@@ -28,20 +95,38 @@ export interface Resumen {
   gastosSinRellenar: number
   /** Coste anual medio (%) de lo invertido, ponderado por saldo. */
   costeMedio: number
+  /** Capital pendiente de los préstamos hoy. */
+  deuda: number
+  /** Cuotas de préstamos este mes. */
+  cuotaMes: number
 }
 
 export function resumir(e: Estado): Resumen {
-  const ingresoRecurrente = e.ingresos.filter((i) => i.frecuencia === 'mensual').reduce((s, i) => s + i.importe, 0)
-  const ingresoAnual = ingresoRecurrente * 12 + e.ingresos.filter((i) => i.frecuencia === 'anual').reduce((s, i) => s + i.importe, 0)
+  // Media de los próximos 12 meses: los gastos e ingresos con fechas cuentan solo los meses en que están vigentes.
+  const hoy = e.ajustes.inicio
+  const prox = Array.from({ length: 12 }, (_, k) => sumarMeses(hoy, k))
+  const peso = (x: { desde?: string; hasta?: string }) => prox.filter((ym) => vigente(x, ym)).length / 12
+  const ingresoRecurrente = e.ingresos.filter((i) => i.frecuencia === 'mensual').reduce((s, i) => s + i.importe * peso(i), 0)
+  const ingresoAnual =
+    ingresoRecurrente * 12 +
+    e.ingresos
+      .filter((i) => i.frecuencia === 'anual')
+      .reduce((s, i) => s + (prox.some((ym) => Number(ym.slice(5)) === (i.mes ?? 1) && vigente(i, ym)) ? i.importe : 0), 0)
   const ingresoMedioMes = ingresoAnual / 12
-  const gastoMes = e.gastos.reduce((s, g) => s + mensual(g), 0)
-  const gastoFijoMes = e.gastos.filter((g) => g.fijo).reduce((s, g) => s + mensual(g), 0)
+  const gastosHoy = e.gastos.map((g) => ({ g, m: mensual(g) * peso(g) }))
+  // Cuotas de préstamos de los próximos 12 meses, como gasto fijo de su categoría.
+  const cuotas = (e.prestamos ?? []).map((p) => ({ p, cuota: cuadroPrestamo(p).meses.filter((m) => prox.includes(m.ym)).reduce((s, m) => s + m.cuota, 0) / 12 })).filter((x) => x.cuota > 0)
+  const cuotaMes = cuotas.reduce((s, x) => s + x.cuota, 0)
+  const gastoMes = gastosHoy.reduce((s, x) => s + x.m, 0) + cuotaMes
+  const gastoFijoMes = gastosHoy.filter((x) => x.g.fijo).reduce((s, x) => s + x.m, 0) + cuotaMes
+  const deuda = (e.prestamos ?? []).reduce((s, p) => s + (p.inicio > hoy ? 0 : pendienteAntesDe(p, hoy)), 0)
   const aportFondos = e.aportaciones.filter((a) => a.destino === 'fondos').reduce((s, a) => s + a.importe, 0)
   const aportPension = e.aportaciones.filter((a) => a.destino === 'pension').reduce((s, a) => s + a.importe, 0)
   const aportMes = e.aportaciones.reduce((s, a) => s + a.importe, 0)
   const resultadoMes = ingresoMedioMes - gastoMes
   const mapa = new Map<Categoria, number>()
-  for (const g of e.gastos) mapa.set(g.categoria, (mapa.get(g.categoria) ?? 0) + mensual(g))
+  for (const { g, m } of gastosHoy) mapa.set(g.categoria, (mapa.get(g.categoria) ?? 0) + m)
+  for (const { p, cuota } of cuotas) mapa.set(p.categoria, (mapa.get(p.categoria) ?? 0) + cuota)
   const porCategoria = [...mapa.entries()]
     .map(([categoria, importe]) => ({ categoria, importe }))
     .filter((c) => c.importe > 0)
@@ -68,7 +153,9 @@ export function resumir(e: Estado): Resumen {
     efectivo,
     invertido,
     liquidoInvertido,
-    patrimonio: efectivo + invertido,
+    patrimonio: efectivo + invertido - deuda,
+    deuda,
+    cuotaMes,
     mesesColchon: gastoMes > 0 ? efectivo / gastoMes : Infinity,
     gastosSinRellenar: e.gastos.filter((g) => !g.importe).length,
     costeMedio,
@@ -93,6 +180,10 @@ export interface MesFlujo {
   efectivo: number
   invertido: number
   patrimonio: number
+  /** Cuotas de préstamos del mes (incluidas en gastos). */
+  cuotas: number
+  /** Capital pendiente de préstamos al final del mes. */
+  deuda: number
   notas: string[]
 }
 
@@ -123,6 +214,10 @@ export function flujo(e: Estado, meses = 24): MesFlujo[] {
   const rm = (1 + (a.rentBase - r.costeMedio + 2.5) / 100) ** (1 / 12) - 1
   let caja = r.efectivo
   let invertido = r.invertido
+  const cuadros = (e.prestamos ?? []).map((p) => {
+    const c = cuadroPrestamo(p)
+    return { p, porMes: new Map(c.meses.map((m) => [m.ym, m])) }
+  })
   const out: MesFlujo[] = []
   for (let k = 0; k < meses; k++) {
     const ym = sumarMeses(a.inicio, k)
@@ -133,6 +228,7 @@ export function flujo(e: Estado, meses = 24): MesFlujo[] {
     let ingresosAnuales = 0
     let ingresosExtra = 0
     for (const i of e.ingresos) {
+      if (!vigente(i, ym)) continue
       const f = i.crece ? (1 + a.subidaSalario / 100) ** Math.max(0, y - y0) : 1
       if (i.frecuencia === 'mensual') nomina += i.importe * f
       else if ((i.mes ?? 1) === m) {
@@ -144,6 +240,7 @@ export function flujo(e: Estado, meses = 24): MesFlujo[] {
     let familia = 0
     let otrosGastos = 0
     for (const g of e.gastos) {
+      if (!vigente(g, ym)) continue
       let imp = 0
       if (g.frecuencia === 'mensual') imp = g.importe
       else if (g.frecuencia === 'trimestral' && (m - 1) % 3 === ((g.mes ?? 1) - 1) % 3) imp = g.importe
@@ -158,6 +255,23 @@ export function flujo(e: Estado, meses = 24): MesFlujo[] {
       else otrosGastos += imp
     }
     let extraordinarios = 0
+    let cuotas = 0
+    let deuda = 0
+    for (const c of cuadros) {
+      const mp = c.porMes.get(ym)
+      if (mp) {
+        cuotas += mp.cuota
+        if (c.p.categoria === 'Vivienda') alquiler += mp.cuota
+        else if (c.p.categoria === 'Familia') familia += mp.cuota
+        else otrosGastos += mp.cuota
+        if (mp.anticipado) {
+          extraordinarios += mp.anticipado
+          notas.push(`− Amortización ${c.p.nombre}`)
+        }
+        if (mp.pendiente === 0) notas.push(`✓ ${c.p.nombre} pagado`)
+        deuda += mp.pendiente
+      }
+    }
     for (const ev of e.eventos) if (ev.fecha === ym) {
       if (ev.tipo === 'gasto') extraordinarios += ev.importe
       else {
@@ -178,7 +292,7 @@ export function flujo(e: Estado, meses = 24): MesFlujo[] {
     invertido = invertido * (1 + rm) + aportaciones
     out.push({
       ym, ano: y, edad: a.edad + (y - y0), ingresos, nomina, ingresosAnuales, ingresosExtra, gastos, alquiler, familia, otrosGastos,
-      extraordinarios, aportaciones, neto, efectivo: caja, invertido, patrimonio: caja + invertido, notas,
+      extraordinarios, aportaciones, neto, efectivo: caja, invertido, patrimonio: caja + invertido - deuda, cuotas, deuda, notas,
     })
   }
   return out
@@ -209,6 +323,8 @@ export interface AnoFlujo {
   invertido: number
   patrimonio: number
   tasaAhorro: number
+  cuotas: number
+  deuda: number
 }
 
 export function porAnos(f: MesFlujo[]): AnoFlujo[] {
@@ -224,6 +340,8 @@ export function porAnos(f: MesFlujo[]): AnoFlujo[] {
       gastos, alquiler: sum('alquiler'), familia: sum('familia'), otrosGastos: sum('otrosGastos'), extraordinarios: sum('extraordinarios'),
       aportaciones: sum('aportaciones'), neto: sum('neto'), efectivo: last.efectivo, invertido: last.invertido, patrimonio: last.patrimonio,
       tasaAhorro: ingresos > 0 ? (ingresos - gastos - sum('extraordinarios')) / ingresos : 0,
+      cuotas: sum('cuotas'),
+      deuda: last.deuda,
     }
   })
 }

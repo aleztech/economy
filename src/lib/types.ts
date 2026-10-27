@@ -27,6 +27,10 @@ export interface Ingreso {
   mes?: number
   /** Si sube cada enero con la subida salarial prevista. */
   crece?: boolean
+  /** Primer mes en que se cobra (AAAA-MM). Sin valor: desde siempre. */
+  desde?: string
+  /** Último mes en que se cobra (AAAA-MM). Sin valor: sin fin. */
+  hasta?: string
 }
 
 /** Cómo se actualiza un gasto con los años. */
@@ -50,6 +54,34 @@ export interface Gasto {
   subida?: number
   /** Año al que corresponde el importe; sube a partir del siguiente. */
   anoBase?: number
+  /** Primer mes en que se paga (AAAA-MM). Sin valor: desde siempre. */
+  desde?: string
+  /** Último mes en que se paga (AAAA-MM). Sin valor: sin fin. */
+  hasta?: string
+}
+
+/** Pago anticipado de un préstamo: reduce el plazo (misma cuota) o la cuota (mismo plazo). */
+export interface Amortizacion {
+  id: string
+  /** AAAA-MM */
+  fecha: string
+  importe: number
+  modo: 'plazo' | 'cuota'
+}
+
+export interface Prestamo {
+  id: string
+  nombre: string
+  capital: number
+  /** TAE en %. */
+  tae: number
+  plazoMeses: number
+  /** Mes de la primera cuota, AAAA-MM. */
+  inicio: string
+  /** Categoría en la que cuenta la cuota. */
+  categoria: Categoria
+  amortizaciones: Amortizacion[]
+  nota?: string
 }
 
 export type Destino = 'fondos' | 'pension' | 'colchon' | 'piso'
@@ -122,6 +154,8 @@ export interface Estado {
   aportaciones: Aportacion[]
   eventos: Evento[]
   activos: Activo[]
+  /** Préstamos con su cuadro de amortización (opcional en datos antiguos). */
+  prestamos?: Prestamo[]
   ajustes: Ajustes
   actualizado: string
   /** Fecha de los datos publicados de los que parte este estado. */
