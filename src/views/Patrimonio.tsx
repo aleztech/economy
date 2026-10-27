@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { resumir } from '../lib/calc'
+import { resumir, valorBien } from '../lib/calc'
 import { uid, type Activo, type TipoActivo } from '../lib/types'
 import { eur, pct } from '../lib/format'
 import { Badge, Button, Card, Field, NumberInput, Section, Select, Stat, TextInput, Toggle } from '../components/ui'
@@ -13,6 +13,7 @@ const TIPOS: Record<TipoActivo, { label: string; color: string }> = {
   pension: { label: 'Plan de pensiones', color: '#7a6fd0' },
   alternativo: { label: 'Alternativo', color: '#eda100' },
   efectivo: { label: 'Efectivo', color: '#1baf7a' },
+  bien: { label: 'Bien (se deprecia)', color: '#8a8f98' },
 }
 
 export default function Patrimonio() {
@@ -29,18 +30,19 @@ export default function Patrimonio() {
 
   const porTipo = useMemo(() => {
     const m = new Map<TipoActivo, number>()
-    for (const x of estado.activos) m.set(x.tipo, (m.get(x.tipo) ?? 0) + x.valor)
-    return [...m.entries()].map(([tipo, valor]) => ({ tipo, valor })).sort((a, b) => b.valor - a.valor)
-  }, [estado.activos])
+    const hoy = estado.ajustes.inicio
+    for (const x of estado.activos) m.set(x.tipo, (m.get(x.tipo) ?? 0) + (x.tipo === 'bien' ? valorBien(x, hoy, hoy) : x.valor))
+    return [...m.entries()].map(([tipo, valor]) => ({ tipo, valor })).filter((t) => t.valor > 0).sort((a, b) => b.valor - a.valor)
+  }, [estado.activos, estado.ajustes.inicio])
 
-  const invertidos = estado.activos.filter((x) => x.tipo !== 'efectivo' && x.valor > 0)
+  const invertidos = estado.activos.filter((x) => x.tipo !== 'efectivo' && x.tipo !== 'bien' && x.valor > 0)
   const costeMedio = invertidos.reduce((s, x) => s + x.valor * (x.coste ?? 0), 0) / Math.max(1, invertidos.reduce((s, x) => s + x.valor, 0))
   const disponible = r.efectivo + r.liquidoInvertido
 
   return (
     <div className="rise flex flex-col gap-8">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Total" value={eur(r.patrimonio)} sub={r.deuda > 0 ? `Neto de ${eur(r.deuda)} de deuda` : `${(r.patrimonio / Math.max(1, r.ingresoMedioMes)).toFixed(0)} meses de ingresos`} />
+        <Stat label="Total" value={eur(r.patrimonio)} sub={r.deuda > 0 || r.bienes > 0 ? [r.bienes > 0 && `${eur(r.bienes)} en bienes`, r.deuda > 0 && `−${eur(r.deuda)} de deuda`].filter(Boolean).join(' · ') : `${(r.patrimonio / Math.max(1, r.ingresoMedioMes)).toFixed(0)} meses de ingresos`} />
         <Stat label="Disponible" value={eur(disponible)} sub="Efectivo + fondos que puedes vender" />
         <Stat label="Efectivo" value={eur(r.efectivo)} sub={`${Number.isFinite(r.mesesColchon) ? r.mesesColchon.toFixed(1) : '—'} meses de gastos`} />
         <Stat label="Coste medio" value={`${costeMedio.toFixed(2).replace('.', ',')} %`} sub="Ponderado por saldo invertido" tone={costeMedio > 0.6 ? 'warn' : 'good'} />
@@ -50,7 +52,7 @@ export default function Patrimonio() {
         <Card className="flex flex-col gap-4 p-4 md:p-5">
           <div className="flex h-4 w-full gap-[2px] overflow-hidden rounded-full">
             {porTipo.map((t) => (
-              <div key={t.tipo} style={{ width: `${(t.valor / Math.max(1, r.efectivo + r.invertido)) * 100}%`, background: TIPOS[t.tipo].color }} className="h-full first:rounded-l-full last:rounded-r-full" />
+              <div key={t.tipo} style={{ width: `${(t.valor / Math.max(1, porTipo.reduce((s, t) => s + t.valor, 0))) * 100}%`, background: TIPOS[t.tipo].color }} className="h-full first:rounded-l-full last:rounded-r-full" />
             ))}
           </div>
           <ul className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -61,7 +63,7 @@ export default function Patrimonio() {
                   {TIPOS[t.tipo].label}
                 </span>
                 <span className="num text-muted">
-                  {eur(t.valor)} · {pct(t.valor / Math.max(1, r.efectivo + r.invertido))}
+                  {eur(t.valor)} · {pct(t.valor / Math.max(1, porTipo.reduce((s, t) => s + t.valor, 0)))}
                 </span>
               </li>
             ))}
@@ -91,6 +93,8 @@ export default function Patrimonio() {
                       <Badge>{TIPOS[x.tipo].label}</Badge>
                       {x.coste != null && <Badge tone={x.coste >= 1 ? 'warn' : 'neutral'}>{String(x.coste).replace('.', ',')} % anual</Badge>}
                       {!x.liquido && <Badge tone="info">No disponible</Badge>}
+                      {x.tipo === 'bien' && x.depreciacion != null && <Badge>−{String(x.depreciacion).replace('.', ',')} % al año</Badge>}
+                      {x.tipo === 'bien' && x.desde && x.desde > estado.ajustes.inicio && <Badge tone="info">Desde {x.desde}</Badge>}
                     </span>
                   </div>
                   <span className="num shrink-0 text-[15px] font-medium">{eur(x.valor)}</span>
@@ -104,9 +108,20 @@ export default function Patrimonio() {
                     <Field label="Valor actual">
                       <NumberInput id={`pv-${x.id}`} value={x.valor} onChange={(n) => up(x.id, { valor: n })} />
                     </Field>
-                    <Field label="Coste anual">
-                      <NumberInput id={`pc-${x.id}`} optional suffix="%" value={x.coste} onChange={(n) => up(x.id, { coste: n })} />
-                    </Field>
+                    {x.tipo === 'bien' ? (
+                      <Field label="Pierde al año">
+                        <NumberInput id={`pd-${x.id}`} optional suffix="%" value={x.depreciacion} onChange={(n) => up(x.id, { depreciacion: n })} />
+                      </Field>
+                    ) : (
+                      <Field label="Coste anual">
+                        <NumberInput id={`pc-${x.id}`} optional suffix="%" value={x.coste} onChange={(n) => up(x.id, { coste: n })} />
+                      </Field>
+                    )}
+                    {x.tipo === 'bien' && (
+                      <Field label="Mes de compra" className="col-span-2">
+                        <TextInput id={`pf-${x.id}`} type="month" value={x.desde ?? ''} onChange={(e) => up(x.id, { desde: e.target.value || undefined })} />
+                      </Field>
+                    )}
                     <Field label="Tipo" className="col-span-2">
                       <Select id={`pt-${x.id}`} value={x.tipo} onChange={(e) => up(x.id, { tipo: e.target.value as TipoActivo })}>
                         {Object.entries(TIPOS).map(([k, v]) => (

@@ -104,7 +104,7 @@ export interface Evento {
   activoId?: string
 }
 
-export type TipoActivo = 'indexado' | 'gestion-activa' | 'efectivo' | 'pension' | 'alternativo'
+export type TipoActivo = 'indexado' | 'gestion-activa' | 'efectivo' | 'pension' | 'alternativo' | 'bien'
 
 export interface Activo {
   id: string
@@ -114,6 +114,10 @@ export interface Activo {
   /** Coste anual total en % (TER + gestión). */
   coste?: number
   liquido: boolean
+  /** Solo bienes (coche…): % de valor que pierde cada año. */
+  depreciacion?: number
+  /** Solo bienes: mes de compra (AAAA-MM). Antes no cuenta; desde ahí se deprecia. */
+  desde?: string
 }
 
 export interface Ajustes {

@@ -1,8 +1,22 @@
-import type { Estado, Gasto, Categoria, Prestamo } from './types'
+import type { Activo, Estado, Gasto, Categoria, Prestamo } from './types'
 import { sumarMeses } from './format'
 
 /** Si un gasto o ingreso con fechas de inicio y fin está vigente en el mes ym (AAAA-MM). */
 export const vigente = (x: { desde?: string; hasta?: string }, ym: string) => (!x.desde || ym >= x.desde) && (!x.hasta || ym <= x.hasta)
+
+const mesesEntre = (a: string, b: string) => {
+  const [ya, ma] = a.split('-').map(Number)
+  const [yb, mb] = b.split('-').map(Number)
+  return yb * 12 + mb - (ya * 12 + ma)
+}
+
+/** Valor de un bien (coche…) en el mes ym: 0 antes de comprarlo, después se deprecia cada año. */
+export function valorBien(a: Activo, ym: string, inicio: string): number {
+  if (a.tipo !== 'bien') return 0
+  if (a.desde && ym < a.desde) return 0
+  const meses = Math.max(0, mesesEntre(a.desde ?? inicio, ym))
+  return a.valor * (1 - (a.depreciacion ?? 0) / 100) ** (meses / 12)
+}
 
 /** Importe mensual medio de un gasto en los 12 meses que empiezan en hoy (cuenta solo los meses vigentes). */
 export const mensualMedio = (g: Gasto, hoy: string) => (mensual(g) * Array.from({ length: 12 }, (_, k) => sumarMeses(hoy, k)).filter((ym) => vigente(g, ym)).length) / 12
@@ -95,6 +109,8 @@ export interface Resumen {
   gastosSinRellenar: number
   /** Coste anual medio (%) de lo invertido, ponderado por saldo. */
   costeMedio: number
+  /** Valor actual de los bienes que se deprecian (coche…). */
+  bienes: number
   /** Capital pendiente de los préstamos hoy. */
   deuda: number
   /** Cuotas de préstamos este mes. */
@@ -131,10 +147,12 @@ export function resumir(e: Estado): Resumen {
     .map(([categoria, importe]) => ({ categoria, importe }))
     .filter((c) => c.importe > 0)
     .sort((a, b) => b.importe - a.importe)
+  const esInversion = (a: Activo) => a.tipo !== 'efectivo' && a.tipo !== 'bien'
   const efectivo = e.activos.filter((a) => a.tipo === 'efectivo').reduce((s, a) => s + a.valor, 0)
-  const invertido = e.activos.filter((a) => a.tipo !== 'efectivo').reduce((s, a) => s + a.valor, 0)
-  const liquidoInvertido = e.activos.filter((a) => a.tipo !== 'efectivo' && a.liquido).reduce((s, a) => s + a.valor, 0)
-  const costeMedio = invertido > 0 ? e.activos.filter((a) => a.tipo !== 'efectivo').reduce((s, a) => s + a.valor * (a.coste ?? 0), 0) / invertido : 0
+  const invertido = e.activos.filter(esInversion).reduce((s, a) => s + a.valor, 0)
+  const liquidoInvertido = e.activos.filter((a) => esInversion(a) && a.liquido).reduce((s, a) => s + a.valor, 0)
+  const costeMedio = invertido > 0 ? e.activos.filter(esInversion).reduce((s, a) => s + a.valor * (a.coste ?? 0), 0) / invertido : 0
+  const bienes = e.activos.reduce((s, a) => s + valorBien(a, hoy, hoy), 0)
   return {
     ingresoRecurrente,
     ingresoAnual,
@@ -153,7 +171,8 @@ export function resumir(e: Estado): Resumen {
     efectivo,
     invertido,
     liquidoInvertido,
-    patrimonio: efectivo + invertido - deuda,
+    patrimonio: efectivo + invertido + bienes - deuda,
+    bienes,
     deuda,
     cuotaMes,
     mesesColchon: gastoMes > 0 ? efectivo / gastoMes : Infinity,
@@ -184,6 +203,8 @@ export interface MesFlujo {
   cuotas: number
   /** Capital pendiente de préstamos al final del mes. */
   deuda: number
+  /** Valor de los bienes (coche…) al final del mes. */
+  bienes: number
   notas: string[]
 }
 
@@ -290,9 +311,10 @@ export function flujo(e: Estado, meses = 24): MesFlujo[] {
     const neto = ingresos - gastos - extraordinarios - aportaciones
     caja += neto
     invertido = invertido * (1 + rm) + aportaciones
+    const bienes = e.activos.reduce((s, x) => s + valorBien(x, ym, a.inicio), 0)
     out.push({
       ym, ano: y, edad: a.edad + (y - y0), ingresos, nomina, ingresosAnuales, ingresosExtra, gastos, alquiler, familia, otrosGastos,
-      extraordinarios, aportaciones, neto, efectivo: caja, invertido, patrimonio: caja + invertido - deuda, cuotas, deuda, notas,
+      extraordinarios, aportaciones, neto, efectivo: caja, invertido, patrimonio: caja + invertido + bienes - deuda, cuotas, deuda, bienes, notas,
     })
   }
   return out
@@ -325,6 +347,7 @@ export interface AnoFlujo {
   tasaAhorro: number
   cuotas: number
   deuda: number
+  bienes: number
 }
 
 export function porAnos(f: MesFlujo[]): AnoFlujo[] {
@@ -342,6 +365,7 @@ export function porAnos(f: MesFlujo[]): AnoFlujo[] {
       tasaAhorro: ingresos > 0 ? (ingresos - gastos - sum('extraordinarios')) / ingresos : 0,
       cuotas: sum('cuotas'),
       deuda: last.deuda,
+      bienes: last.bienes,
     }
   })
 }
@@ -401,7 +425,7 @@ export function pruebasEstres(e: Estado): Estres[] {
     const ult = f[f.length - 1]
     const inv = c.ajusteInv != null ? ult.invertido * c.ajusteInv : ult.invertido
     const min = f.reduce((m, x) => (x.efectivo < m.efectivo ? x : m), f[0])
-    const patrimonioFinal = ult.efectivo + inv
+    const patrimonioFinal = ult.patrimonio - ult.invertido + inv
     return { id: c.id, nombre: c.nombre, descripcion: c.descripcion, efectivoFinal: ult.efectivo, patrimonioFinal, minimoEfectivo: min.efectivo, mesMinimo: min.ym, diferencia: patrimonioFinal - fin.patrimonio }
   })
 }
