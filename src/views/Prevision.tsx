@@ -161,7 +161,7 @@ function VistaAnual({ anos }: { anos: ReturnType<typeof porAnos> }) {
             </tbody>
           </table>
         </Card>
-        <p className="text-[12px] text-muted">Ahorro = ingresos − gastos − extraordinarios (incluye lo que va a inversión). Las cuotas de préstamos van en su categoría y las amortizaciones anticipadas en extraordinarios. Patrimonio = efectivo + invertido − deuda. Desliza la tabla en el móvil.</p>
+        <p className="text-[12px] text-muted">Ahorro = ingresos − gastos − extraordinarios (incluye lo que va a inversión). Las cuotas de préstamos van en su categoría y las amortizaciones anticipadas en extraordinarios. Patrimonio = efectivo + invertido + bienes (coche, depreciado) − deuda. Desliza la tabla en el móvil.</p>
       </Section>
     </>
   )
