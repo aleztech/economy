@@ -162,6 +162,8 @@ export interface Estado {
   prestamos?: Prestamo[]
   /** Movimientos importados de extractos (solo en este navegador, cifrados). */
   movimientos?: import('./movimientos').Movimiento[]
+  /** Pasos del plan de acción marcados como hechos (por id). */
+  accionesHechas?: string[]
   ajustes: Ajustes
   actualizado: string
   /** Fecha de los datos publicados de los que parte este estado. */

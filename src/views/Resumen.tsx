@@ -6,6 +6,7 @@ import { resumir, flujo, mesesHorizonte, porAnos } from '../lib/calc'
 import { eur, eurCorto, pct, etiquetaMes } from '../lib/format'
 import { Card, Section, Stat, TooltipBox } from '../components/ui'
 import { Recomendaciones } from '../components/Recs'
+import { PlanAccion } from '../components/Plan'
 import type { Vista } from '../App'
 
 const COLORES_CAT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7', '#008300', '#e34948']
@@ -120,6 +121,10 @@ export default function Resumen({ ir }: { ir: (v: Vista) => void }) {
           </div>
           <p className="px-2 pt-1 text-[12px] text-muted">La línea discontinua marca 3 meses de gastos, el colchón mínimo.</p>
         </Card>
+      </Section>
+
+      <Section title="Plan de acción" hint="Pasos concretos, en orden, con importes, fechas y tus cuentas. Se recalculan con cada cambio.">
+        <PlanAccion />
       </Section>
 
       <Section title="Recomendaciones" hint="Se recalculan con cada cambio que haces en ingresos, gastos o patrimonio.">
