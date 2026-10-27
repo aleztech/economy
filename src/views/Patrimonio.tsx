@@ -40,7 +40,7 @@ export default function Patrimonio() {
   return (
     <div className="rise flex flex-col gap-8">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Total" value={eur(r.patrimonio)} sub={`${(r.patrimonio / Math.max(1, r.ingresoMedioMes)).toFixed(0)} meses de ingresos`} />
+        <Stat label="Total" value={eur(r.patrimonio)} sub={r.deuda > 0 ? `Neto de ${eur(r.deuda)} de deuda` : `${(r.patrimonio / Math.max(1, r.ingresoMedioMes)).toFixed(0)} meses de ingresos`} />
         <Stat label="Disponible" value={eur(disponible)} sub="Efectivo + fondos que puedes vender" />
         <Stat label="Efectivo" value={eur(r.efectivo)} sub={`${Number.isFinite(r.mesesColchon) ? r.mesesColchon.toFixed(1) : '—'} meses de gastos`} />
         <Stat label="Coste medio" value={`${costeMedio.toFixed(2).replace('.', ',')} %`} sub="Ponderado por saldo invertido" tone={costeMedio > 0.6 ? 'warn' : 'good'} />
@@ -50,7 +50,7 @@ export default function Patrimonio() {
         <Card className="flex flex-col gap-4 p-4 md:p-5">
           <div className="flex h-4 w-full gap-[2px] overflow-hidden rounded-full">
             {porTipo.map((t) => (
-              <div key={t.tipo} style={{ width: `${(t.valor / Math.max(1, r.patrimonio)) * 100}%`, background: TIPOS[t.tipo].color }} className="h-full first:rounded-l-full last:rounded-r-full" />
+              <div key={t.tipo} style={{ width: `${(t.valor / Math.max(1, r.efectivo + r.invertido)) * 100}%`, background: TIPOS[t.tipo].color }} className="h-full first:rounded-l-full last:rounded-r-full" />
             ))}
           </div>
           <ul className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -61,7 +61,7 @@ export default function Patrimonio() {
                   {TIPOS[t.tipo].label}
                 </span>
                 <span className="num text-muted">
-                  {eur(t.valor)} · {pct(t.valor / Math.max(1, r.patrimonio))}
+                  {eur(t.valor)} · {pct(t.valor / Math.max(1, r.efectivo + r.invertido))}
                 </span>
               </li>
             ))}

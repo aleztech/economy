@@ -57,7 +57,7 @@ export default function Resumen({ ir }: { ir: (v: Vista) => void }) {
         <Stat label="Ingresos / mes" value={eur(r.ingresoMedioMes)} sub={`Nómina ${eur(r.ingresoRecurrente)} + extras prorrateados`} />
         <Stat label="Gastos / mes" value={eur(r.gastoMes)} sub={r.gastosSinRellenar ? `${r.gastosSinRellenar} gastos sin rellenar` : `Fijos ${eur(r.gastoFijoMes)}`} tone={r.gastosSinRellenar ? 'warn' : undefined} />
         <Stat label="Ahorro / mes" value={eur(r.resultadoMes)} sub={`Tasa de ahorro ${pct(r.tasaAhorro)}`} tone={r.resultadoMes < 0 ? 'bad' : r.tasaAhorro >= 0.2 ? 'good' : undefined} />
-        <Stat label="Patrimonio" value={eur(r.patrimonio)} sub={`${eur(r.efectivo)} en efectivo`} />
+        <Stat label="Patrimonio" value={eur(r.patrimonio)} sub={r.deuda > 0 ? `${eur(r.efectivo)} en efectivo · −${eur(r.deuda)} de deuda` : `${eur(r.efectivo)} en efectivo`} />
       </div>
 
       <Section title="Adónde va tu dinero" hint={`Reparto del ingreso medio mensual · ${hoy}`}>

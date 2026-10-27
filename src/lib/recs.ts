@@ -126,8 +126,8 @@ export function recomendar(e: Estado): Recomendacion[] {
 
   // 9. Concentración en productos ilíquidos o alternativos
   const alt = e.activos.filter((x) => x.tipo === 'alternativo').reduce((s, x) => s + x.valor, 0)
-  if (r.patrimonio > 0 && alt / r.patrimonio > 0.1)
-    out.push({ id: 'alternativo', nivel: 'media', area: 'Inversión', titulo: `${pct(alt / r.patrimonio)} en inversiones alternativas`, texto: 'Crowdfunding y similares son ilíquidos y con riesgo de impago. Mejor que no pasen del 5-10 % del total.' })
+  if (r.efectivo + r.invertido > 0 && alt / (r.efectivo + r.invertido) > 0.1)
+    out.push({ id: 'alternativo', nivel: 'media', area: 'Inversión', titulo: `${pct(alt / (r.efectivo + r.invertido))} en inversiones alternativas`, texto: 'Crowdfunding y similares son ilíquidos y con riesgo de impago. Mejor que no pasen del 5-10 % del total.' })
 
   // 10. Plan de pensiones y desgravación
   const pensionAnual = r.aportPension * 12

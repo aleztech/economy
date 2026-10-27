@@ -3,9 +3,9 @@ import clsx from 'clsx'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { flujo, mesesHorizonte, porAnos, resumir } from '../lib/calc'
-import { uid, type Aportacion, type Destino, type Evento, type Ingreso } from '../lib/types'
-import { eur, eurCorto, etiquetaMes, MESES_LARGOS, pct } from '../lib/format'
+import { cuadroPrestamo, flujo, mesesHorizonte, porAnos, resumir } from '../lib/calc'
+import { CATEGORIAS, uid, type Aportacion, type Categoria, type Destino, type Evento, type Ingreso, type Prestamo } from '../lib/types'
+import { eur, eurCorto, etiquetaMes, etiquetaMesLarga, MESES_LARGOS, pct, sumarMeses } from '../lib/format'
 import { Button, Card, Field, Legend, NumberInput, Section, Segmented, Select, Stat, TextInput, Toggle, TooltipBox } from '../components/ui'
 
 const DESTINOS: Record<Destino, string> = { fondos: 'Fondos / inversión', pension: 'Plan de pensiones', colchon: 'Colchón (se queda en cuenta)', piso: 'Ahorro piso (se queda en cuenta)' }
@@ -49,6 +49,7 @@ export default function Prevision() {
 
       <Ingresos lista={estado.ingresos} onSet={(ingresos) => set((e) => ({ ...e, ingresos }))} />
       <Eventos lista={estado.eventos} inicio={a.inicio} onSet={(eventos) => set((e) => ({ ...e, eventos }))} />
+      <Prestamos lista={estado.prestamos ?? []} inicio={a.inicio} onSet={(prestamos) => set((e) => ({ ...e, prestamos }))} />
       <Aportaciones lista={estado.aportaciones} onSet={(aportaciones) => set((e) => ({ ...e, aportaciones }))} />
     </div>
   )
@@ -121,7 +122,7 @@ function VistaAnual({ anos }: { anos: ReturnType<typeof porAnos> }) {
 
       <Section title="Año a año">
         <Card className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-[13px]">
+          <table className="w-full min-w-[900px] text-[13px]">
             <thead>
               <tr className="border-b border-line text-right text-muted">
                 <th className="px-4 py-2.5 text-left font-medium">Año</th>
@@ -134,6 +135,7 @@ function VistaAnual({ anos }: { anos: ReturnType<typeof porAnos> }) {
                 <th className="px-3 py-2.5 font-medium">Extraord.</th>
                 <th className="px-3 py-2.5 font-medium">Ahorro</th>
                 <th className="px-3 py-2.5 font-medium">Efectivo</th>
+                <th className="px-3 py-2.5 font-medium">Deuda</th>
                 <th className="px-4 py-2.5 font-medium">Patrimonio</th>
               </tr>
             </thead>
@@ -152,13 +154,14 @@ function VistaAnual({ anos }: { anos: ReturnType<typeof porAnos> }) {
                   <td className="px-3 py-2.5">{eur(x.extraordinarios)}</td>
                   <td className={clsx('px-3 py-2.5', x.neto + x.aportaciones < 0 ? 'text-bad' : 'text-good')}>{eur(x.neto + x.aportaciones)}</td>
                   <td className="px-3 py-2.5">{eur(x.efectivo)}</td>
+                  <td className={clsx('px-3 py-2.5', x.deuda > 0 && 'text-bad')}>{x.deuda > 0 ? `−${eur(x.deuda)}` : '—'}</td>
                   <td className="px-4 py-2.5 font-medium">{eur(x.patrimonio)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </Card>
-        <p className="text-[12px] text-muted">Ahorro = ingresos − gastos − extraordinarios (incluye lo que va a inversión). Desliza la tabla en el móvil.</p>
+        <p className="text-[12px] text-muted">Ahorro = ingresos − gastos − extraordinarios (incluye lo que va a inversión). Las cuotas de préstamos van en su categoría y las amortizaciones anticipadas en extraordinarios. Patrimonio = efectivo + invertido − deuda. Desliza la tabla en el móvil.</p>
       </Section>
     </>
   )
@@ -295,7 +298,13 @@ function Ingresos({ lista, onSet }: { lista: Ingreso[]; onSet: (l: Ingreso[]) =>
                 ))}
               </Select>
             </Field>
-            <div className="col-span-2 sm:col-span-4">
+            <Field label="Desde (opcional)">
+              <TextInput id={`id-${i.id}`} type="month" value={i.desde ?? ''} onChange={(e) => up(i.id, { desde: e.target.value || undefined })} />
+            </Field>
+            <Field label="Hasta (opcional)">
+              <TextInput id={`ih-${i.id}`} type="month" value={i.hasta ?? ''} onChange={(e) => up(i.id, { hasta: e.target.value || undefined })} />
+            </Field>
+            <div className="col-span-2 flex items-end pb-2">
               <Toggle checked={!!i.crece} onChange={(v) => up(i.id, { crece: v })} label="Sube cada año con la subida salarial" />
             </div>
           </Fila>
@@ -378,5 +387,126 @@ function Eventos({ lista, inicio, onSet }: { lista: Evento[]; inicio: string; on
         {!lista.length && <p className="p-4 text-[13px] text-muted">Sin extraordinarios previstos.</p>}
       </Card>
     </Section>
+  )
+}
+
+function Prestamos({ lista, inicio, onSet }: { lista: Prestamo[]; inicio: string; onSet: (l: Prestamo[]) => void }) {
+  const up = (id: string, p: Partial<Prestamo>) => onSet(lista.map((x) => (x.id === id ? { ...x, ...p } : x)))
+  const add = () =>
+    onSet([...lista, { id: uid(), nombre: 'Préstamo', capital: 10000, tae: 7, plazoMeses: 60, inicio: sumarMeses(inicio, 1), categoria: 'Transporte', amortizaciones: [] }])
+  return (
+    <Section
+      title="Préstamos"
+      hint="La cuota entra cada mes en su categoría y la deuda pendiente resta del patrimonio. Los pagos anticipados reducen el plazo (misma cuota) o la cuota (mismo plazo)."
+      action={
+        <Button className="h-9 px-3" onClick={add}>
+          <Plus size={16} /> Añadir
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        {lista.map((p) => (
+          <TarjetaPrestamo key={p.id} p={p} onChange={(x) => up(p.id, x)} onBorrar={() => onSet(lista.filter((y) => y.id !== p.id))} />
+        ))}
+        {!lista.length && (
+          <Card>
+            <p className="p-4 text-[13px] text-muted">Sin préstamos.</p>
+          </Card>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+function TarjetaPrestamo({ p, onChange, onBorrar }: { p: Prestamo; onChange: (x: Partial<Prestamo>) => void; onBorrar: () => void }) {
+  const c = useMemo(() => cuadroPrestamo(p), [p])
+  const plazoOriginal = sumarMeses(p.inicio, p.plazoMeses - 1)
+  const ahorro = c.interesesSinAnticipos - c.intereses
+  const upA = (id: string, x: Partial<Prestamo['amortizaciones'][number]>) => onChange({ amortizaciones: p.amortizaciones.map((a) => (a.id === id ? { ...a, ...x } : a)) })
+  const ultima = [...c.meses].reverse().find((m) => m.cuota > 0 && m.pendiente > 0) ?? c.meses[c.meses.length - 1]
+  return (
+    <Card className="flex flex-col divide-y divide-line">
+      <Fila onBorrar={onBorrar}>
+        <Field label="Concepto" className="col-span-2">
+          <TextInput id={`pn-${p.id}`} value={p.nombre} onChange={(e) => onChange({ nombre: e.target.value })} />
+        </Field>
+        <Field label="Capital">
+          <NumberInput id={`pc-${p.id}`} value={p.capital} onChange={(n) => onChange({ capital: n })} />
+        </Field>
+        <Field label="TAE">
+          <NumberInput id={`pt-${p.id}`} value={p.tae} suffix="%" onChange={(n) => onChange({ tae: n })} />
+        </Field>
+        <Field label="Plazo">
+          <NumberInput id={`pp-${p.id}`} value={p.plazoMeses} suffix="meses" onChange={(n) => onChange({ plazoMeses: Math.max(1, Math.round(n)) })} />
+        </Field>
+        <Field label="Primera cuota">
+          <TextInput id={`pi-${p.id}`} type="month" value={p.inicio} onChange={(e) => e.target.value && onChange({ inicio: e.target.value })} />
+        </Field>
+        <Field label="Categoría de la cuota" className="col-span-2">
+          <Select id={`pk-${p.id}`} value={p.categoria} onChange={(e) => onChange({ categoria: e.target.value as Categoria })}>
+            {CATEGORIAS.map((k) => (
+              <option key={k}>{k}</option>
+            ))}
+          </Select>
+        </Field>
+      </Fila>
+      <div className="grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-4">
+        <div className="flex flex-col gap-0.5">
+          <span className="eyebrow">Cuota inicial</span>
+          <span className="num text-[17px] font-semibold">{eur(c.cuotaInicial, true)}</span>
+          {ultima && Math.abs(ultima.cuota - c.cuotaInicial) > 1 && <span className="text-[12px] text-muted">Última: {eur(ultima.cuota, true)}</span>}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="eyebrow">Terminas de pagar</span>
+          <span className="text-[15px] font-semibold">{etiquetaMesLarga(c.fin)}</span>
+          {c.fin < plazoOriginal && <span className="text-[12px] text-good">Sin anticipos: {etiquetaMesLarga(plazoOriginal)}</span>}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="eyebrow">Intereses totales</span>
+          <span className="num text-[17px] font-semibold">{eur(c.intereses)}</span>
+          {ahorro > 1 && <span className="text-[12px] text-good">Te ahorras {eur(ahorro)}</span>}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="eyebrow">Total pagado</span>
+          <span className="num text-[17px] font-semibold">{eur(p.capital + c.intereses)}</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-medium">Pagos anticipados</span>
+          <Button
+            variant="outline"
+            className="h-8 px-3 text-[13px]"
+            onClick={() => onChange({ amortizaciones: [...p.amortizaciones, { id: uid(), fecha: sumarMeses(p.inicio, 3), importe: 1000, modo: 'plazo' }] })}
+          >
+            <Plus size={14} /> Añadir
+          </Button>
+        </div>
+        {[...p.amortizaciones]
+          .sort((x, y) => x.fecha.localeCompare(y.fecha))
+          .map((a) => (
+            <div key={a.id} className="flex items-end gap-2">
+              <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
+                <Field label="Mes">
+                  <TextInput id={`am-${a.id}`} type="month" value={a.fecha} onChange={(e) => e.target.value && upA(a.id, { fecha: e.target.value })} />
+                </Field>
+                <Field label="Importe">
+                  <NumberInput id={`ai-${a.id}`} value={a.importe} onChange={(n) => upA(a.id, { importe: n })} />
+                </Field>
+                <Field label="Reduce">
+                  <Select id={`ao-${a.id}`} value={a.modo} onChange={(e) => upA(a.id, { modo: e.target.value as 'plazo' | 'cuota' })}>
+                    <option value="plazo">Plazo</option>
+                    <option value="cuota">Cuota</option>
+                  </Select>
+                </Field>
+              </div>
+              <Button variant="ghost" className="h-10 w-10 shrink-0 px-0" aria-label="Eliminar pago anticipado" onClick={() => onChange({ amortizaciones: p.amortizaciones.filter((x) => x.id !== a.id) })}>
+                <Trash2 size={16} />
+              </Button>
+            </div>
+          ))}
+        {!p.amortizaciones.length && <p className="text-[12.5px] text-muted">Sin pagos anticipados.</p>}
+      </div>
+    </Card>
   )
 }
